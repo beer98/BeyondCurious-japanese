@@ -27,11 +27,61 @@
 
 ## 快速开始
 
-1. 读 `00-框架与方法论.md`（10 分钟，理解为什么这么做）
-2. 读 `01-每日工作流SOP.md`（5 分钟，知道每天几点做什么）
-3. 把 `05-Claude执行提示词.md` 的内容复制给 Claude，发送当日日期 → 出结果
-4. 把结果存到 `07-每日复盘归档/YYYY-MM-DD.md`
-5. 周末跑 `04-自进化复盘机制.md` 的脚本，更新 `08-知识沉淀/`
+### A. 完全自动化（推荐）
+
+仓库已配好 GitHub Actions，配置好 secret 后**每个交易日盘前自动跑**：
+
+1. 在 GitHub repo Settings → Secrets → Actions 加 `ANTHROPIC_API_KEY`
+2. 可选：Settings → Variables 设 `CLAUDE_MODEL=claude-opus-4-7` `CLAUDE_EFFORT=xhigh`
+3. 三个 workflow 自动生效：
+   - `daily-scan.yml` · 工作日盘前 07:30 ET 自动跑 → 报告 commit 到 `07-每日复盘归档/YYYY-MM-DD.md`
+   - `weekly-review.yml` · 周日 19:00 ET 自动周复盘
+   - `monthly-review.yml` · 月底自动月复盘 + 规则库 diff
+4. 任何一个都可在 GitHub Actions 页面手动 `Run workflow` 立即触发
+5. Claude 用内置 `web_search` + `web_fetch` 工具实时抓催化剂、财报、社交情绪——**不需要任何额外 API key**
+
+### B. 本地手动跑
+
+```bash
+pip install -r scripts/requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...
+python scripts/run_scan.py daily       # 当日扫描
+python scripts/run_scan.py weekly      # 周复盘
+python scripts/run_scan.py monthly     # 月复盘
+python scripts/run_scan.py review --date 2026-04-30   # 重新复盘某日
+```
+
+可选环境变量：`PORTFOLIO`、`MACRO_NOTE`、`CLAUDE_MODEL`、`CLAUDE_EFFORT`、`CLAUDE_MAX_TOKENS`。
+
+### C. 纯手动（粘贴提示词模式）
+
+读 `05-Claude执行提示词.md`，把内容粘到 Claude/GPT 网页对话框。
+
+## 自动化架构
+
+```
+GitHub Actions cron ─┐
+                     ├──> scripts/run_scan.py ──> Claude Opus 4.7
+本地 CLI ────────────┘                              + adaptive thinking
+                                                    + web_search 实时抓数据
+                                                    + 系统提示词 prompt cache
+                                                    │
+                                                    ▼
+                              07-每日复盘归档/YYYY-MM-DD.md
+                                                    │
+                                                    ▼
+                                    git commit & push（自动）
+```
+
+**成本估算**（Opus 4.7 + xhigh effort）：
+- 每日扫描 ≈ $0.5-2（system prompt 约 30K tok，二次以后 90% 缓存读）
+- 周复盘 ≈ $1-3
+- 月复盘 ≈ $2-5
+- 月度总成本 ≈ $20-50
+
+**降本方案**：
+- 把 `CLAUDE_MODEL=claude-sonnet-4-6` → 成本降到 1/3
+- 把 `CLAUDE_EFFORT=medium` → 再降 30%
 
 ## ⚠️ 风险声明
 
