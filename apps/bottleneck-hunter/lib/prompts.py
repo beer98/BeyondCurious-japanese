@@ -8,9 +8,10 @@ keep system prompts under ~12K tokens.
 from __future__ import annotations
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SYSTEM_DIR = REPO_ROOT / "04-AI工具箱" / "提示词与工作流" / "瓶颈猎手-美股每日进化系统"
-ARCHIVE_DIR = SYSTEM_DIR / "07-每日复盘归档"
+# lib/ sits inside the app folder, so the app root is the parent of this file's parent
+APP_ROOT = Path(__file__).resolve().parents[1]
+SYSTEM_DIR = APP_ROOT
+ARCHIVE_DIR = APP_ROOT / "07-每日复盘归档"
 
 
 def _read(rel: str) -> str:

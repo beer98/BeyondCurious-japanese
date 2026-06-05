@@ -6,22 +6,9 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ARCHIVE_DIR = (
-    REPO_ROOT
-    / "04-AI工具箱"
-    / "提示词与工作流"
-    / "瓶颈猎手-美股每日进化系统"
-    / "07-每日复盘归档"
-)
-RULES_PATH = (
-    REPO_ROOT
-    / "04-AI工具箱"
-    / "提示词与工作流"
-    / "瓶颈猎手-美股每日进化系统"
-    / "08-知识沉淀"
-    / "规则库.md"
-)
+APP_ROOT = Path(__file__).resolve().parents[1]
+ARCHIVE_DIR = APP_ROOT / "07-每日复盘归档"
+RULES_PATH = APP_ROOT / "08-知识沉淀" / "规则库.md"
 
 
 def archive_report(filename: str, body: str, usage: list[dict] | dict) -> Path:

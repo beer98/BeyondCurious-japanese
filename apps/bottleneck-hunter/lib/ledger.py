@@ -24,13 +24,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterator
 
-LEDGER_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "04-AI工具箱"
-    / "提示词与工作流"
-    / "瓶颈猎手-美股每日进化系统"
-    / "08-知识沉淀"
-)
+LEDGER_DIR = Path(__file__).resolve().parents[1] / "08-知识沉淀"
 LEDGER_PATH = LEDGER_DIR / "绩效台账.jsonl"
 
 
