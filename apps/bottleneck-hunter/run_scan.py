@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lib import archiver, ledger, llm, prompts  # noqa: E402
+from lib import archiver, enrich, ledger, llm, prompts  # noqa: E402
 
 
 def _today() -> str:
@@ -126,6 +126,25 @@ def phase_d_critic(report_text: str, target_path: Path) -> dict:
     return {"ok": True, "usage": usage}
 
 
+# ---------- Phase E: enrichment (fresh prices + verdict card at top) ----------
+
+
+def phase_e_enrich(target_path: Path) -> dict:
+    text = target_path.read_text(encoding="utf-8")
+    picks_block = archiver.extract_json(text)
+    if not picks_block or "picks" not in picks_block:
+        print("[E] no picks JSON, skipping enrichment", file=sys.stderr)
+        return {"skipped": True, "reason": "no_picks"}
+    picks = picks_block["picks"]
+    print(f"[E] enriching {len(picks)} picks with live quotes/news", file=sys.stderr)
+    block = enrich.build_enrichment(picks, text)
+    if not block:
+        return {"skipped": True, "reason": "no_data"}
+    target_path.write_text(enrich.inject_top(text, block), encoding="utf-8")
+    print("[E] enrichment block prepended to report", file=sys.stderr)
+    return {"ok": True, "picks_enriched": len(picks)}
+
+
 # ---------- commands ----------
 
 
@@ -136,6 +155,7 @@ def cmd_loop(_args) -> int:
     report_text, usages, target = phase_c_scan()
     summary["phases"]["C"] = {"ok": True, "path": str(target.name)}
     summary["phases"]["D"] = phase_d_critic(report_text, target)
+    summary["phases"]["E"] = phase_e_enrich(target)
     summary["ledger_stats"] = ledger.stats_summary()
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str), file=sys.stderr)
     return 0
