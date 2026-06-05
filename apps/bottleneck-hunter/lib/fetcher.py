@@ -16,6 +16,8 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from . import market as _market
+
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -48,6 +50,54 @@ def web_search(query: str, max_results: int = 8) -> list[dict[str, str]]:
     if not results:
         return [{"warning": "no results parsed (DuckDuckGo may have changed markup)"}]
     return results
+
+
+SERENITY_HANDLE = "aleabitoreddit"
+NITTER_INSTANCES = [
+    "https://nitter.poast.org",
+    "https://nitter.privacydev.net",
+    "https://nitter.net",
+]
+
+
+def search_serenity(query: str = "", days: int = 7, max_results: int = 8) -> dict[str, Any]:
+    """Find Serenity (@aleabitoreddit) tweets matching a query.
+
+    Strategy:
+    1. Try Nitter RSS first (cleanest data when an instance is up)
+    2. Fall back to DuckDuckGo site-restricted search if Nitter fails
+    """
+    # ---- 1. Nitter RSS ----
+    nitter_results: list[dict] = []
+    for base in NITTER_INSTANCES:
+        try:
+            url = f"{base}/{SERENITY_HANDLE}/rss"
+            r = SESSION.get(url, timeout=8)
+            if r.status_code != 200 or "<rss" not in r.text[:200]:
+                continue
+            soup = BeautifulSoup(r.text, "xml") if "xml" in r.headers.get(
+                "Content-Type", ""
+            ) else BeautifulSoup(r.text, "html.parser")
+            for item in soup.find_all("item")[: max_results * 2]:
+                title = item.find("title").get_text(strip=True) if item.find("title") else ""
+                link = item.find("link").get_text(strip=True) if item.find("link") else ""
+                pub = item.find("pubDate").get_text(strip=True) if item.find("pubDate") else ""
+                if query and query.lower() not in title.lower():
+                    continue
+                nitter_results.append(
+                    {"title": title, "url": link, "published": pub, "source": "nitter"}
+                )
+                if len(nitter_results) >= max_results:
+                    break
+            if nitter_results:
+                return {"source": f"nitter ({base})", "tweets": nitter_results}
+        except requests.RequestException:
+            continue
+
+    # ---- 2. Fallback: DDG site-restricted search ----
+    ddg_query = f"site:x.com {SERENITY_HANDLE} {query}".strip()
+    ddg = web_search(ddg_query, max_results=max_results)
+    return {"source": "ddg_fallback", "query": ddg_query, "tweets": ddg}
 
 
 def fetch_url(url: str, max_chars: int = 8000) -> dict[str, Any]:
@@ -125,12 +175,33 @@ TOOL_SCHEMAS = [
             },
         },
     },
-]
+    {
+        "type": "function",
+        "function": {
+            "name": "search_serenity",
+            "description": (
+                "Find Serenity (@aleabitoreddit on X) tweets matching a query. "
+                "Uses Nitter RSS first, then falls back to DuckDuckGo site:x.com search. "
+                "Use for: getting his latest take on a ticker / supply chain theme / sector."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Keyword filter, e.g. 'LITE' or 'CPO'. Empty = latest tweets."},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 15},
+                },
+                "required": [],
+            },
+        },
+    },
+] + _market.TOOL_SCHEMAS
 
-# Dispatch map for tool execution
+# Dispatch map for tool execution — merges web tools + market tools
 DISPATCH = {
     "web_search": web_search,
     "fetch_url": fetch_url,
+    "search_serenity": search_serenity,
+    **_market.DISPATCH,
 }
 
 
