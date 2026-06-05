@@ -25,63 +25,60 @@
 | `07-每日复盘归档/` | 每天一个文件，命名 `YYYY-MM-DD.md` |
 | `08-知识沉淀/` | 经过复盘验证的可复用规则 / 反规则 |
 
-## 快速开始
+## 快速开始 · 完全自动化 + 自进化循环
 
-### A. 完全自动化（推荐）
+每次 GitHub Actions cron 自动跑**4 阶段循环**——这就是「自进化」：
 
-仓库已配好 GitHub Actions，配置好 secret 后**每个交易日盘前自动跑**：
+```
+Phase A · 复盘昨日 → 给昨日推荐打分 → 写入 08-知识沉淀/绩效台账.jsonl
+Phase B · 蒸馏规则 → 扫台账，连续 ≥3 次模式 → 写入规则库候选区
+Phase C · 今日扫描 → 用最新规则库 + 工具循环 → 出今日报告
+Phase D · 自审（红队）→ 第二个 LLM 检查今日报告漏洞 → 追加批注
+```
 
-1. 在 GitHub repo Settings → Secrets → Actions 加 `ANTHROPIC_API_KEY`
-2. 可选：Settings → Variables 设 `CLAUDE_MODEL=claude-opus-4-7` `CLAUDE_EFFORT=xhigh`
-3. 三个 workflow 自动生效：
-   - `daily-scan.yml` · 工作日盘前 07:30 ET 自动跑 → 报告 commit 到 `07-每日复盘归档/YYYY-MM-DD.md`
-   - `weekly-review.yml` · 周日 19:00 ET 自动周复盘
-   - `monthly-review.yml` · 月底自动月复盘 + 规则库 diff
-4. 任何一个都可在 GitHub Actions 页面手动 `Run workflow` 立即触发
-5. Claude 用内置 `web_search` + `web_fetch` 工具实时抓催化剂、财报、社交情绪——**不需要任何额外 API key**
+### 配置（一次性，5 分钟）
 
-### B. 本地手动跑
+1. GitHub repo Settings → Secrets and variables → Actions → **New repository secret**
+   - 名字：`DEEPSEEK_API_KEY`
+   - 值：从 https://platform.deepseek.com/api_keys 拿
+2. 可选 Variables：`DEEPSEEK_MODEL=deepseek-chat`（默认）、`DEEPSEEK_MODEL_CRITIC=deepseek-reasoner`（自审用更强模型）
+3. Actions 标签页 → `瓶颈猎手 · 每日自进化循环` → `Run workflow` 触发首次
+4. 之后工作日盘前 07:30 ET 自动跑
+
+### 本地跑
 
 ```bash
 pip install -r scripts/requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
-python scripts/run_scan.py daily       # 当日扫描
-python scripts/run_scan.py weekly      # 周复盘
-python scripts/run_scan.py monthly     # 月复盘
-python scripts/run_scan.py review --date 2026-04-30   # 重新复盘某日
+export DEEPSEEK_API_KEY=sk-...
+
+python scripts/run_scan.py loop                    # 完整 4 阶段（推荐）
+python scripts/run_scan.py daily                   # 只 Phase C
+python scripts/run_scan.py review                  # 只 Phase A+B
+python scripts/run_scan.py critic --file 2026-04-30.md  # 只 Phase D
 ```
-
-可选环境变量：`PORTFOLIO`、`MACRO_NOTE`、`CLAUDE_MODEL`、`CLAUDE_EFFORT`、`CLAUDE_MAX_TOKENS`。
-
-### C. 纯手动（粘贴提示词模式）
-
-读 `05-Claude执行提示词.md`，把内容粘到 Claude/GPT 网页对话框。
 
 ## 自动化架构
 
 ```
-GitHub Actions cron ─┐
-                     ├──> scripts/run_scan.py ──> Claude Opus 4.7
-本地 CLI ────────────┘                              + adaptive thinking
-                                                    + web_search 实时抓数据
-                                                    + 系统提示词 prompt cache
-                                                    │
-                                                    ▼
-                              07-每日复盘归档/YYYY-MM-DD.md
-                                                    │
-                                                    ▼
-                                    git commit & push（自动）
+GitHub Actions cron (工作日 07:30 ET)
+        ↓
+scripts/run_scan.py loop
+        ↓
+┌─ A 复盘 ──→ DeepSeek-chat + web_search 查昨日实际涨跌 → 绩效台账.jsonl
+├─ B 蒸馏 ──→ DeepSeek-chat 扫台账 + 现有规则 → 规则库候选区
+├─ C 扫描 ──→ DeepSeek-chat + 工具循环（DuckDuckGo + fetch_url）
+│              ├─ 5 层漏斗 → 出今日报告 Markdown
+│              └─ 结尾输出 picks JSON（下次 A 阶段会用）
+└─ D 自审 ──→ DeepSeek-reasoner 红队复核 → 追加自审批注
+
+→ git commit + push（自动回本分支）
 ```
 
-**成本估算**（Opus 4.7 + xhigh effort）：
-- 每日扫描 ≈ $0.5-2（system prompt 约 30K tok，二次以后 90% 缓存读）
-- 周复盘 ≈ $1-3
-- 月复盘 ≈ $2-5
-- 月度总成本 ≈ $20-50
+**成本估算**（DeepSeek-chat 输入 $0.27/M、输出 $1.10/M）：
+- 每次完整循环 ≈ **$0.05-0.20**
+- 月度总成本 ≈ **$1-5**（每月 ~22 个交易日）
 
-**降本方案**：
-- 把 `CLAUDE_MODEL=claude-sonnet-4-6` → 成本降到 1/3
-- 把 `CLAUDE_EFFORT=medium` → 再降 30%
+DeepSeek 没有 Claude 那种内置 web_search，所以系统自带 DuckDuckGo + fetch_url 函数工具——免 key、免限速。如果 DuckDuckGo 被墙了，换 Tavily / Brave / SerpAPI 都只需改 `lib/fetcher.py` 一个文件。
 
 ## ⚠️ 风险声明
 

@@ -1,8 +1,8 @@
-"""Build system prompts from the methodology Markdown files.
+"""Prompt assembly.
 
-The system prompt is intentionally large and stable — methodology + rule library
-+ supply chain map — so it caches well across daily runs (90% read discount).
-Volatile content (today's date, portfolio, mode) goes into the user message.
+System prompt is rebuilt every run because the rule library and ledger grow over time —
+that's the whole point of self-evolution. DeepSeek doesn't have prompt caching, so we
+keep system prompts under ~12K tokens.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SYSTEM_DIR = REPO_ROOT / "04-AI工具箱" / "提示词与工作流" / "瓶颈猎手-美股每日进化系统"
+ARCHIVE_DIR = SYSTEM_DIR / "07-每日复盘归档"
 
 
 def _read(rel: str) -> str:
@@ -20,118 +21,160 @@ def _read(rel: str) -> str:
 
 
 def build_system_prompt() -> str:
-    """Stable system prompt — methodology, rules, supply chain map, watchlist.
-
-    Order matters for prompt caching. Anything that might change frequently
-    must come AFTER everything stable.
-    """
     sections = [
-        "# 你是「瓶颈猎手」 - Serenity 思维原型的美股供应链分析师\n",
-        "## 一、核心方法论\n",
+        "# 你是「瓶颈猎手」——Serenity (@aleabitoreddit) 思维原型的美股供应链分析师",
+        "你必须用 web_search 和 fetch_url 工具实时抓取数据，不允许凭记忆回答今日行情。",
+        "",
+        "## 一、核心方法论",
         _read("00-框架与方法论.md"),
-        "\n## 二、每日 SOP\n",
-        _read("01-每日工作流SOP.md"),
-        "\n## 三、自进化复盘机制\n",
-        _read("04-自进化复盘机制.md"),
-        "\n## 四、规则库（系统长期记忆）\n",
+        "",
+        "## 二、规则库（系统长期记忆，每次运行前必读）",
         _read("08-知识沉淀/规则库.md"),
-        "\n## 五、供应链地图\n",
+        "",
+        "## 三、供应链地图",
         _read("08-知识沉淀/供应链地图.md"),
-        "\n## 六、当前候选股票池\n",
+        "",
+        "## 四、候选股票池",
         _read("06-候选清单/瓶颈股票池.md"),
-        "\n## 七、信息源清单\n",
+        "",
+        "## 五、信息源",
         _read("08-知识沉淀/信息源清单.md"),
-        "\n## 八、强制行为约束\n",
-        STRICT_INSTRUCTIONS,
+        "",
+        "## 六、强制约束",
+        STRICT,
     ]
     return "\n".join(sections)
 
 
-STRICT_INSTRUCTIONS = """
-你必须严格遵守：
-
-1. **使用 web_search 工具**抓取今日真实数据（财报、新闻、宏观、社交情绪）。
-   不允许凭训练数据回答今日行情，必须实时搜索。
-
-2. **5 层漏斗输出**：催化剂 → 供应链节点 → 瓶颈打分 → 社交信号 → 期权结构。
-   每一层都要有明确的输出，不能跳过。
-
-3. **每只候选标的**必须给出：
-   - 7 维度打分（剪刀差/替代/估值/财务/技术/期权/关注度）总分≥7.0
-   - 入场区间、仓位%、止损价、止盈条件、期权 DTE
-   - 反方论点（最强 2 条做空理由）
-   - 「如果我错了，最先在哪个数据上看到信号」
-
-4. **规则库检查**：对每个推荐逐条对照「正式规则」与「反规则」，触发反规则的必须剔除并说明引用编号。
-
-5. **风险预算**：单标的≤15%，单板块≤35%，总杠杆≤1.5×。
-
-6. **禁止**：
-   - 推荐 meme 股（除非有真实供应链瓶颈论点）
-   - 财报当日裸卖期权
-   - 100% 把握式语言（必须给概率区间）
-   - 不读规则库就直接输出
-
-7. **输出格式**：完整 Markdown，按 `02-每日研究模板.md` 的章节顺序填写。
-   报告将被自动归档到 `07-每日复盘归档/YYYY-MM-DD.md`。
-
-8. **复盘模式**：当用户要求复盘某日/某周时，你切换到归因分析模式：
-   - 拉取历史报告
-   - 对照实际涨跌
-   - 找系统性偏差（连续≥3 次的模式才有意义）
-   - 提出候选规则（带触发条件 + 应执行动作 + 已观察次数）
+STRICT = """
+- 5 层漏斗每层都有产出：催化剂 → 供应链节点 → 7 维度打分（≥7.0） → 社交信号 → 期权结构
+- 每只推荐必须有：入场区间 / 仓位% / 止损 / 止盈 / DTE / 反方 2 条 / 失败信号
+- 风险预算：单标的≤15%，单板块≤35%，总杠杆≤1.5×
+- 禁止：meme 股、财报当日裸卖、100% 把握语言
+- 输出完整 Markdown，章节按「02-每日研究模板.md」顺序
+- 所有引用必须有 URL（web_search 返回的）；编造来源等于失败
 """
 
 
-def build_daily_user_message(
-    today: str,
-    portfolio: str = "（无持仓 / 待用户填写）",
-    macro: str = "（待 web_search 抓取）",
-    rules_addendum: str = "",
-) -> str:
-    return f"""今日任务：运行每日扫描。
+def build_daily_user(today: str, portfolio: str, macro: str) -> str:
+    return f"""今日扫描日期：{today}
+当前持仓：{portfolio}
+今日宏观备注：{macro}
 
-**日期**：{today}
-**当前持仓**：{portfolio}
-**今日宏观**：{macro}
+请用 web_search 调研：
+1. 今日 3-5 个核心催化剂（财报、宏观、出口管制、行业大会、大佬推文）
+2. Serenity (@aleabitoreddit) 过去 7 天的 X 帖子（搜 "aleabitoreddit" + ticker / 关键词）
+3. 头部瓶颈股的最新供应链信号
+4. r/wallstreetbets / r/stocks 当日 daily thread 情绪
 
-请按 SOP 执行：
-1. 用 web_search 抓取今日 3-5 个核心催化剂（财报、宏观、出口管制、行业大会）
-2. 把催化剂映射到供应链节点
-3. 对每个候选标的做 7 维度打分
-4. 用 web_search 验证社交信号（X / Reddit / StockTwits）
-5. 给出今日动作清单（标的/方向/期权结构/入场/仓位/止损/止盈）
-6. 反方论点 + 规则库检查 + 最大遗憾测试
+然后按 SOP 输出完整今日报告（Markdown）。每只推荐结尾加一段「失败检测信号」：
+> 如果我错了，最先在 [指标 X] 上看到 [阈值 Y] 的变化。
 
-输出完整 Markdown 报告，将归档为 `07-每日复盘归档/{today}.md`。
+最后追加一段 JSON，包在 ```json 块里，**结构必须严格如下**（用于绩效台账）：
 
-{rules_addendum}
+```json
+{{
+  "scan_date": "{today}",
+  "picks": [
+    {{
+      "ticker": "$XXX",
+      "direction": "long" | "short",
+      "thesis_summary": "一句话",
+      "entry_zone": "X.XX-X.XX",
+      "stop": "X.XX",
+      "target": "X.XX",
+      "structure": "正股 / SellPut30Δ / ...",
+      "primary_layer": "Layer 1 catalysts | Layer 2 supply chain | Layer 3 scorecard | Layer 4 social | Layer 5 options"
+    }}
+  ]
+}}
+```
 """
 
 
-def build_weekly_review_message(week_start: str, week_end: str) -> str:
-    return f"""本周复盘：{week_start} 至 {week_end}
+def build_review_user(yesterday_md: str, picks_json: list[dict], today: str) -> str:
+    picks_table = "\n".join(
+        f"- {p.get('ticker')} {p.get('direction')} entry={p.get('entry_zone')} stop={p.get('stop')} target={p.get('target')} layer={p.get('primary_layer')}"
+        for p in picks_json
+    )
+    return f"""任务：复盘 {yesterday_md} 报告中的推荐，今日是 {today}。
 
-请按 `04-自进化复盘机制.md` 的 Step 1-4 执行：
+待复盘标的：
+{picks_table}
 
-1. **数据对齐**：用 web_search 拉取本周每日复盘文件中提到的标的的实际涨跌
-2. **归因分析**：每笔建议判断
-   - 好判断+好结果 / 好判断+坏结果 / 坏判断+好结果（最危险） / 坏判断+坏结果
-3. **找模式**：连续≥3 次出现的偏差
-4. **更新规则库候选区**：把新模式以候选规则格式输出
+请用 web_search 查每只标的从上次扫描至今的实际表现（百分比变化、是否触发止损/止盈/反方信号）。
 
-输出完整 Markdown 周复盘报告，归档为 `07-每日复盘归档/周复盘_{week_end}.md`。
+然后输出 JSON，包在 ```json 块里，**结构必须严格如下**（将写入绩效台账 jsonl）：
+
+```json
+{{
+  "review_date": "{today}",
+  "entries": [
+    {{
+      "scan_date": "{yesterday_md.replace('.md','')}",
+      "review_date": "{today}",
+      "ticker": "$XXX",
+      "direction": "long" | "short",
+      "thesis_summary": "原论点",
+      "entry_zone": "X.XX-X.XX",
+      "stop": "X.XX",
+      "target": "X.XX",
+      "actual_change_pct": 0.0,
+      "verdict": "hit" | "miss" | "neutral",
+      "layer_attribution": "...",
+      "notes": "为什么对/错"
+    }}
+  ]
+}}
+```
+不要其他评论，只输出 JSON。
 """
 
 
-def build_monthly_review_message(month: str) -> str:
-    return f"""月度复盘：{month}
+def build_distill_user(patterns: list[dict], current_rules: str) -> str:
+    return f"""任务：从绩效台账涌现的模式中蒸馏候选规则。
 
-请执行：
-1. 量化指标（vs SPY/QQQ/SOXX、胜率、平均 R:R、最大回撤、决策质量分均值）
-2. 候选规则审议（达 3 次验证 → 提升正式规则；连续 2 月低于 50% → 进入墓地）
-3. 框架升级建议（漏斗权重、信息源信噪比）
+涌现模式（已出现 ≥3 次）：
+```json
+{patterns}
+```
 
-输出完整月度报告，归档为 `07-每日复盘归档/月复盘_{month}.md`。
-同时输出"规则库 diff"，明确指出哪些规则要新增/修改/废弃。
+现有规则库内容（节选「候选区」）：
+```
+{current_rules[:3000]}
+```
+
+为每个新模式提出 1 条候选规则，格式严格如下（直接 append 到规则库候选区）：
+
+```markdown
+### [候选] 反规则 · 提出日 YYYY-MM-DD
+- 触发条件：（来自模式的 layer + verdict）
+- 应执行动作：（具体可执行）
+- 已观察次数：{{count}} / 3
+- 关联台账：（前 3 个样本的 scan_date）
+```
+
+不要修改已有规则，只输出新增的 markdown 段落。
+"""
+
+
+def build_critic_user(today_report: str) -> str:
+    return f"""任务：审计今日扫描报告。你是「红队」，目标是找它的漏洞。
+
+请按以下顺序检查：
+1. **数据来源**：每个核心论点是否有 URL？是否有看起来像编造的引用？
+2. **规则触犯**：对照规则库正式规则 + 反规则，逐条检查每只推荐
+3. **盲点**：今日有哪些催化剂被忽略了？哪些板块没看？
+4. **风险预算**：仓位是否突破单标的 15% / 单板块 35%？
+5. **反方完整性**：每只推荐的反方论点是否真的能证伪，还是稻草人？
+6. **失败信号**：「如果错了在哪里看到」是否可观察 + 可量化？
+
+如果发现严重问题（漏洞≥1 或触犯反规则），在批注开头加：
+🚨 **CRITICAL ISSUES FOUND**
+
+输出 Markdown 段落，以 `## 自审批注（红队复核）` 为标题。
+
+待审报告：
+---
+{today_report[:20000]}
 """

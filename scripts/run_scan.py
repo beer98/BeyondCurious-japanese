@@ -1,124 +1,181 @@
 #!/usr/bin/env python3
-"""瓶颈猎手 - 自动化扫描入口（供 GitHub Actions 与本地手动调用）.
+"""瓶颈猎手 - 4 阶段自进化循环.
 
-用法：
-    python scripts/run_scan.py daily
-    python scripts/run_scan.py weekly
-    python scripts/run_scan.py monthly
-    python scripts/run_scan.py review --date 2026-04-30   # 重新复盘某日
+每次运行（每日 GitHub Action cron）：
+  Phase A · 复盘昨日 → 给昨日推荐打分 → 写入 08-知识沉淀/绩效台账.jsonl
+  Phase B · 蒸馏规则 → 扫台账，连续 ≥3 次模式 → 写入规则库候选区
+  Phase C · 今日扫描 → 用最新规则库 + 工具循环 → 出今日报告
+  Phase D · 自审 → 第二轮 LLM 检查今日报告 → 追加批注
 
-环境变量（见 scripts/.env.example）：
-    ANTHROPIC_API_KEY   必填
-    CLAUDE_MODEL        默认 claude-opus-4-7
-    CLAUDE_EFFORT       默认 high；推荐 xhigh 用于 agentic
-    CLAUDE_MAX_TOKENS   默认 32000
-
-可选环境变量（运行时上下文，给当日 user message 用）：
-    PORTFOLIO   "$LITE 8% / $AXTI 5% / cash 30%"
-    MACRO_NOTE  "MSFT 盘后财报，CPI 08:30 ET"
+CLI:
+    python scripts/run_scan.py loop              # 完整 4 阶段循环（GH Actions 默认）
+    python scripts/run_scan.py daily             # 只跑 C
+    python scripts/run_scan.py review            # 只跑 A+B
+    python scripts/run_scan.py critic --file X.md  # 只跑 D
 """
 
 from __future__ import annotations
-
 import argparse
+import json
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
-# Make `lib.*` importable when running this script directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lib import archiver, claude_client, prompts  # noqa: E402
+from lib import archiver, ledger, llm, prompts  # noqa: E402
 
 
-def _today_et() -> date:
-    """Best-effort 'today in ET' — fine without zoneinfo for archiving purposes."""
-    return datetime.utcnow().date()  # naive UTC; close enough for filename use
+def _today() -> str:
+    return datetime.utcnow().date().isoformat()
 
 
-def cmd_daily(_args: argparse.Namespace) -> int:
-    today = _today_et().isoformat()
-    portfolio = os.environ.get("PORTFOLIO", "（无持仓 / 待用户填写）")
+# ---------- Phase A: review yesterday ----------
+
+
+def phase_a_review() -> dict:
+    """Pull yesterday's report, ask LLM to fetch actual prices and score each pick."""
+    found = archiver.find_yesterday_report()
+    if not found:
+        print("[A] no prior report, skipping review", file=sys.stderr)
+        return {"skipped": True, "reason": "no_prior_report"}
+
+    last_path, last_text = found
+    yesterday_name = last_path.name
+    print(f"[A] reviewing {yesterday_name}", file=sys.stderr)
+
+    picks_block = archiver.extract_json(last_text)
+    if not picks_block or "picks" not in picks_block:
+        print("[A] no picks JSON in yesterday's report", file=sys.stderr)
+        return {"skipped": True, "reason": "no_picks_json"}
+
+    system = prompts.build_system_prompt()
+    user = prompts.build_review_user(
+        yesterday_md=yesterday_name,
+        picks_json=picks_block["picks"],
+        today=_today(),
+    )
+    text, usage = llm.run_agent(system, user)
+    review_json = archiver.extract_json(text)
+    if not review_json or "entries" not in review_json:
+        print("[A] couldn't parse review JSON", file=sys.stderr)
+        return {"skipped": True, "reason": "parse_failed", "usage": usage}
+
+    n = ledger.append_entries(review_json["entries"])
+    print(f"[A] appended {n} entries to ledger", file=sys.stderr)
+    return {"ok": True, "entries": n, "usage": usage}
+
+
+# ---------- Phase B: distill rules ----------
+
+
+def phase_b_distill() -> dict:
+    patterns = ledger.emerging_patterns(min_count=3)
+    if not patterns:
+        print("[B] no emerging patterns ≥3, skipping", file=sys.stderr)
+        return {"skipped": True}
+
+    print(f"[B] {len(patterns)} emerging patterns", file=sys.stderr)
+    rules_text = archiver.RULES_PATH.read_text(encoding="utf-8") if archiver.RULES_PATH.exists() else ""
+    system = "你是规则蒸馏助手。基于已观察的模式产出可执行规则草案。"
+    user = prompts.build_distill_user(patterns, rules_text)
+    text, usage = llm.run_simple(system, user, model=llm.DEFAULT_MODEL)
+    archiver.append_rules(text)
+    print("[B] appended candidate rules", file=sys.stderr)
+    return {"ok": True, "patterns": len(patterns), "usage": usage}
+
+
+# ---------- Phase C: today's scan ----------
+
+
+def phase_c_scan() -> tuple[str, list[dict], Path]:
+    today = _today()
+    portfolio = os.environ.get("PORTFOLIO", "（未提供）")
     macro = os.environ.get("MACRO_NOTE", "（待 web_search 抓取）")
 
     system = prompts.build_system_prompt()
-    user = prompts.build_daily_user_message(
-        today=today, portfolio=portfolio, macro=macro
-    )
+    user = prompts.build_daily_user(today, portfolio, macro)
 
-    print(f"[scan] daily run for {today}", file=sys.stderr)
-    body, usage = claude_client.run(system, user)
-    target = archiver.archive(f"{today}.md", body, usage)
-    print(f"[scan] wrote {target.relative_to(Path.cwd()) if target.is_absolute() else target}", file=sys.stderr)
-    print(f"[scan] usage: {usage}", file=sys.stderr)
+    print(f"[C] scanning for {today}", file=sys.stderr)
+    text, usage = llm.run_agent(system, user)
+    target = archiver.archive_report(f"{today}.md", text, usage)
+    print(f"[C] wrote {target.name}", file=sys.stderr)
+    return text, [usage], target
+
+
+# ---------- Phase D: critique ----------
+
+
+def phase_d_critic(report_text: str, target_path: Path) -> dict:
+    print("[D] running critic", file=sys.stderr)
+    system = "你是红队审计师。你的目标不是认可而是找漏洞。"
+    user = prompts.build_critic_user(report_text)
+    critic_text, usage = llm.run_simple(system, user)
+
+    # Append critique to the report
+    existing = target_path.read_text(encoding="utf-8")
+    # Insert critique BEFORE the auto-generated footer
+    if "<sub>自动生成" in existing:
+        head, footer = existing.split("---\n\n<sub>自动生成", 1)
+        new_text = head.rstrip() + "\n\n" + critic_text.strip() + "\n\n---\n\n<sub>自动生成" + footer
+    else:
+        new_text = existing.rstrip() + "\n\n" + critic_text.strip() + "\n"
+    target_path.write_text(new_text, encoding="utf-8")
+    print("[D] critique appended", file=sys.stderr)
+    return {"ok": True, "usage": usage}
+
+
+# ---------- commands ----------
+
+
+def cmd_loop(_args) -> int:
+    summary = {"date": _today(), "phases": {}}
+    summary["phases"]["A"] = phase_a_review()
+    summary["phases"]["B"] = phase_b_distill()
+    report_text, usages, target = phase_c_scan()
+    summary["phases"]["C"] = {"ok": True, "path": str(target.name)}
+    summary["phases"]["D"] = phase_d_critic(report_text, target)
+    summary["ledger_stats"] = ledger.stats_summary()
+    print(json.dumps(summary, ensure_ascii=False, indent=2, default=str), file=sys.stderr)
     return 0
 
 
-def cmd_weekly(_args: argparse.Namespace) -> int:
-    end = _today_et()
-    start = end - timedelta(days=4)  # last 5 trading days approx
-
-    system = prompts.build_system_prompt()
-    user = prompts.build_weekly_review_message(start.isoformat(), end.isoformat())
-
-    print(f"[scan] weekly review {start} → {end}", file=sys.stderr)
-    body, usage = claude_client.run(system, user)
-    target = archiver.archive(f"周复盘_{end.isoformat()}.md", body, usage)
-    print(f"[scan] wrote {target}", file=sys.stderr)
-    print(f"[scan] usage: {usage}", file=sys.stderr)
+def cmd_daily(_args) -> int:
+    phase_c_scan()
     return 0
 
 
-def cmd_monthly(_args: argparse.Namespace) -> int:
-    today = _today_et()
-    month = today.strftime("%Y-%m")
-
-    system = prompts.build_system_prompt()
-    user = prompts.build_monthly_review_message(month)
-
-    print(f"[scan] monthly review {month}", file=sys.stderr)
-    body, usage = claude_client.run(system, user)
-    target = archiver.archive(f"月复盘_{month}.md", body, usage)
-    print(f"[scan] wrote {target}", file=sys.stderr)
-    print(f"[scan] usage: {usage}", file=sys.stderr)
+def cmd_review(_args) -> int:
+    phase_a_review()
+    phase_b_distill()
     return 0
 
 
-def cmd_review(args: argparse.Namespace) -> int:
-    target_date = args.date
-    system = prompts.build_system_prompt()
-    user = (
-        f"重新复盘 {target_date}：\n\n"
-        f"1. 拉取 `07-每日复盘归档/{target_date}.md`（用 web_fetch 或就你看到的内容）\n"
-        f"2. 用 web_search 查每个推荐标的从 {target_date} 至今的实际表现\n"
-        f"3. 按 04-自进化复盘机制.md 做归因分析\n"
-        f"4. 输出 1-3 条候选规则\n"
-    )
-    print(f"[scan] re-review {target_date}", file=sys.stderr)
-    body, usage = claude_client.run(system, user)
-    target = archiver.archive(f"复盘_{target_date}.md", body, usage)
-    print(f"[scan] wrote {target}", file=sys.stderr)
-    print(f"[scan] usage: {usage}", file=sys.stderr)
+def cmd_critic(args) -> int:
+    target = archiver.ARCHIVE_DIR / args.file
+    if not target.exists():
+        print(f"file not found: {target}", file=sys.stderr)
+        return 1
+    phase_d_critic(target.read_text(encoding="utf-8"), target)
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="瓶颈猎手自动扫描")
+    parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("daily", help="每日扫描 → 07-每日复盘归档/YYYY-MM-DD.md")
-    sub.add_parser("weekly", help="周复盘")
-    sub.add_parser("monthly", help="月复盘")
-    rv = sub.add_parser("review", help="重新复盘某日")
-    rv.add_argument("--date", required=True, help="YYYY-MM-DD")
+    sub.add_parser("loop", help="完整 4 阶段自进化循环（推荐）")
+    sub.add_parser("daily", help="只跑 Phase C（今日扫描）")
+    sub.add_parser("review", help="只跑 Phase A+B（复盘 + 蒸馏）")
+    cr = sub.add_parser("critic", help="只跑 Phase D（红队审计指定报告）")
+    cr.add_argument("--file", required=True, help="YYYY-MM-DD.md")
 
     args = parser.parse_args()
-
     handlers = {
+        "loop": cmd_loop,
         "daily": cmd_daily,
-        "weekly": cmd_weekly,
-        "monthly": cmd_monthly,
         "review": cmd_review,
+        "critic": cmd_critic,
     }
     return handlers[args.cmd](args)
 
