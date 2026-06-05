@@ -24,8 +24,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: claude/stock-screener-social-analysis-rg81C
 
       - uses: actions/setup-python@v5
         with:

@@ -18,7 +18,7 @@ from . import fetcher
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 DEFAULT_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 DEFAULT_CRITIC_MODEL = os.environ.get("DEEPSEEK_MODEL_CRITIC", "deepseek-reasoner")
-MAX_ITERS = int(os.environ.get("TOOL_LOOP_MAX_ITERS", "12"))
+MAX_ITERS = int(os.environ.get("TOOL_LOOP_MAX_ITERS", "20"))
 
 
 def _client() -> OpenAI:
@@ -122,12 +122,36 @@ def run_agent(
                 }
             )
 
-    # Hit iteration limit
+    # Hit iteration limit. Force one final call with tools disabled, so the model
+    # is forced to write a real final answer from the context it has gathered
+    # (instead of us returning the last raw tool-result JSON).
+    if log_to_stderr:
+        print(
+            f"[llm] hit max_iters={max_iters}; forcing final summary call",
+            file=sys.stderr,
+        )
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                "你已达工具调用上限。请基于已收集的全部信息，"
+                "立即输出完整的最终报告。不要再调用任何工具。"
+            ),
+        }
+    )
+    final_resp = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=8192,
+    )
+    if final_resp.usage:
+        usage_total["prompt_tokens"] += final_resp.usage.prompt_tokens or 0
+        usage_total["completion_tokens"] += final_resp.usage.completion_tokens or 0
+        usage_total["total_tokens"] += final_resp.usage.total_tokens or 0
     usage_total["iterations"] = max_iters
     usage_total["model"] = model
-    usage_total["stop_reason"] = "max_iters"
-    last_text = (messages[-1].get("content") or "") if messages else ""
-    return last_text, usage_total
+    usage_total["stop_reason"] = "max_iters_forced_summary"
+    return final_resp.choices[0].message.content or "", usage_total
 
 
 def run_simple(
