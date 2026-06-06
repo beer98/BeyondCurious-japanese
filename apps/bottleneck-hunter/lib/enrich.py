@@ -10,7 +10,51 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import market
+from . import archiver, market
+
+
+# ---------- Critic findings (structured) ----------
+
+
+def _norm_ticker(t: str) -> str:
+    return (t or "").lstrip("$").strip().upper()
+
+
+def get_blocking_findings(report_text: str) -> list[dict]:
+    """Return findings that are BLOCKER and not DATA_LIMITATION.
+
+    These are the only ones that downgrade a pick to AVOID. Data-limitation
+    findings (Nitter down, search rate-limited, etc.) are system problems
+    NOT investment problems — they never block.
+    """
+    block = archiver.extract_critic_findings(report_text)
+    if not block:
+        return []
+    out = []
+    for f in block.get("findings", []):
+        if f.get("severity") != "BLOCKER":
+            continue
+        if f.get("category") == "DATA_LIMITATION":
+            continue
+        out.append(f)
+    return out
+
+
+def get_all_findings(report_text: str) -> list[dict]:
+    """All findings for display."""
+    block = archiver.extract_critic_findings(report_text)
+    return block.get("findings", []) if block else []
+
+
+def ticker_has_blocker(ticker: str, blockers: list[dict]) -> tuple[bool, str | None]:
+    norm = _norm_ticker(ticker)
+    for b in blockers:
+        tickers = b.get("affected_tickers") or []
+        if any(t == "*" for t in tickers):
+            return True, b.get("title")
+        if any(_norm_ticker(t) == norm for t in tickers):
+            return True, b.get("title")
+    return False, None
 
 
 # ---------- Pick parsing & verdict logic ----------
@@ -38,16 +82,17 @@ def _parse_stop(text: str) -> float | None:
     return float(m.group()) if m else None
 
 
-def _verdict(pick: dict, quote: dict, critic_flagged: bool) -> tuple[str, str]:
-    """Return (emoji, label, one-line reason).
+def _verdict(pick: dict, quote: dict, blocker_title: str | None) -> tuple[str, str]:
+    """Return (emoji, reason).
 
     Rules:
-    - 🔴 AVOID: critic flagged CRITICAL OR quote unavailable OR triggered stop
+    - 🔴 AVOID: this ticker has a BLOCKER finding (non-DATA_LIMITATION),
+                quote unavailable, or stop already triggered
     - 🟢 BUY: current price within entry zone
     - 🟡 WATCH: outside entry zone (too high or too low)
     """
-    if critic_flagged:
-        return "🔴 AVOID", "红队发现 CRITICAL 问题"
+    if blocker_title:
+        return "🔴 AVOID", f"红队 BLOCKER: {blocker_title}"
 
     price = quote.get("price")
     if price is None:
@@ -77,6 +122,7 @@ def _verdict(pick: dict, quote: dict, critic_flagged: bool) -> tuple[str, str]:
 
 
 def _critic_has_critical(report_text: str) -> bool:
+    """Legacy fallback for old reports that have 🚨 emoji but no structured findings."""
     return "🚨" in report_text or "CRITICAL ISSUES FOUND" in report_text
 
 
@@ -150,12 +196,17 @@ def _news_block(rows: list[dict]) -> str:
 def fetch_rows(picks: list[dict], report_text: str) -> list[dict]:
     """Fetch fresh quote/chart/news data for each pick and compute verdict.
 
-    Returns enriched rows. Used by both build_enrichment (Markdown injection)
-    and dashboard.render (HTML output).
+    Verdict downgrade uses structured critic findings (BLOCKER + non-DATA_LIMITATION).
+    Falls back to the legacy 🚨 emoji scan for old reports that lack the JSON block.
     """
     if not picks:
         return []
-    critic_flagged = _critic_has_critical(report_text)
+    blockers = get_blocking_findings(report_text)
+    # Legacy fallback: if no structured findings JSON, use 🚨 emoji scan.
+    legacy_flag = (
+        not archiver.extract_critic_findings(report_text)
+        and _critic_has_critical(report_text)
+    )
     rows: list[dict] = []
     for p in picks:
         ticker = (p.get("ticker") or "").lstrip("$").strip()
@@ -164,7 +215,10 @@ def fetch_rows(picks: list[dict], report_text: str) -> list[dict]:
         quote = market.get_quote(ticker)
         chart = market.get_chart_summary(ticker, days=5)
         news = market.get_ticker_news(ticker, limit=3)
-        emoji_label, reason = _verdict(p, quote, critic_flagged)
+        has_block, block_title = ticker_has_blocker(ticker, blockers)
+        if legacy_flag and not has_block:
+            has_block, block_title = True, "legacy CRITICAL flag"
+        emoji_label, reason = _verdict(p, quote, block_title if has_block else None)
         rows.append(
             {
                 "pick": p,
@@ -173,7 +227,7 @@ def fetch_rows(picks: list[dict], report_text: str) -> list[dict]:
                 "news": news,
                 "verdict": emoji_label,
                 "reason": reason,
-                "critic_flagged": critic_flagged,
+                "blocker_title": block_title if has_block else None,
             }
         )
     return rows
@@ -184,16 +238,16 @@ def build_enrichment(picks: list[dict], report_text: str) -> str:
     rows = fetch_rows(picks, report_text)
     if not rows:
         return ""
-    critic_flagged = rows[0]["critic_flagged"]
 
     # Build summary at the top
     buy_count = sum(1 for r in rows if r["verdict"].startswith("🟢"))
     watch_count = sum(1 for r in rows if r["verdict"].startswith("🟡"))
     avoid_count = sum(1 for r in rows if r["verdict"].startswith("🔴"))
 
+    blocker_count = sum(1 for r in rows if r.get("blocker_title"))
     critic_note = (
-        "\n> 🚨 **红队发现 CRITICAL 问题**，所有推荐已自动降级为 AVOID。详见报告底部「自审批注」。\n"
-        if critic_flagged
+        f"\n> 🛑 **红队 {blocker_count} 项 BLOCKER**，影响标的已降级为 AVOID。详见自审批注。\n"
+        if blocker_count
         else ""
     )
 

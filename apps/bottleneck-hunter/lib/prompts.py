@@ -102,7 +102,7 @@ def build_daily_user(today: str, portfolio: str, macro: str) -> str:
 然后按 SOP 输出完整今日报告（Markdown）。每只推荐结尾加一段「失败检测信号」：
 > 如果我错了，最先在 [指标 X] 上看到 [阈值 Y] 的变化。
 
-最后追加一段 JSON，包在 ```json 块里，**结构必须严格如下**（用于绩效台账）：
+最后追加一段 JSON，包在 ```json 块里，**结构必须严格如下**（用于绩效台账 + 仪表板「思考漏斗」展示）：
 
 ```json
 {{
@@ -111,16 +111,35 @@ def build_daily_user(today: str, portfolio: str, macro: str) -> str:
     {{
       "ticker": "$XXX",
       "direction": "long" | "short",
-      "thesis_summary": "一句话",
+      "thesis_summary": "一句话核心论点",
       "entry_zone": "X.XX-X.XX",
       "stop": "X.XX",
       "target": "X.XX",
       "structure": "正股 / SellPut30Δ / ...",
-      "primary_layer": "Layer 1 catalysts | Layer 2 supply chain | Layer 3 scorecard | Layer 4 social | Layer 5 options"
+      "primary_layer": "Layer 1 catalysts | Layer 2 supply chain | Layer 3 scorecard | Layer 4 social | Layer 5 options",
+      "reasoning": {{
+        "catalyst": "Layer 1 - 这只票是从今天哪条催化剂引出来的（≤40字）",
+        "supply_chain_node": "Layer 2 - 在哪个产业链节点（≤40字，例：CPO 800G/1.6T 光模块）",
+        "scorecard": {{
+          "shears": 0,            "// 0-10 产能/需求剪刀差": null,
+          "substitutability": 0,  "// 0-10 替代难度": null,
+          "valuation": 0,         "// 0-10 估值安全垫（越深折价越高）": null,
+          "financials": 0,        "// 0-10 财务质量": null,
+          "technicals": 0,        "// 0-10 技术形态": null,
+          "options": 0,           "// 0-10 期权链流动性": null,
+          "attention_inverse": 0  "// 0-10 反向关注度（越无人 cover 越高）": null
+        }},
+        "social_signal": "Layer 4 - Serenity/WSB/KOL 当前态度（≤40字）",
+        "options_play": "Layer 5 - 为什么选这个期权结构（≤30字）",
+        "failure_signal": "如果错了，最先在 [指标] 上看到 [阈值] 变化"
+      }}
     }}
   ]
 }}
 ```
+
+**重要**：`scorecard` 里的 7 个分数是 7 维度漏斗打分（详见方法论 Layer 3），必须填实数。
+注释 `"//"` 是给你看的，输出时**只输出数字**，不要注释行。
 """
 
 
@@ -191,20 +210,60 @@ def build_distill_user(patterns: list[dict], current_rules: str) -> str:
 
 
 def build_critic_user(today_report: str) -> str:
-    return f"""任务：审计今日扫描报告。你是「红队」，目标是找它的漏洞。
+    return f"""任务：审计今日扫描报告。你是「红队」，目标是找它的漏洞——但**有底线**。
 
-请按以下顺序检查：
-1. **数据来源**：每个核心论点是否有 URL？是否有看起来像编造的引用？
-2. **规则触犯**：对照规则库正式规则 + 反规则，逐条检查每只推荐
-3. **盲点**：今日有哪些催化剂被忽略了？哪些板块没看？
-4. **风险预算**：仓位是否突破单标的 15% / 单板块 35%？
-5. **反方完整性**：每只推荐的反方论点是否真的能证伪，还是稻草人？
-6. **失败信号**：「如果错了在哪里看到」是否可观察 + 可量化？
+# 严重级别（不要乱用 BLOCKER）
 
-如果发现严重问题（漏洞≥1 或触犯反规则），在批注开头加：
-🚨 **CRITICAL ISSUES FOUND**
+- **BLOCKER**：实质性投资风险，应当阻止下单
+  · 触犯规则库正式规则 / 反规则
+  · 仓位 / 板块集中度突破硬上限（单标的>15%、单板块>35%、总杠杆>1.5×）
+  · 论点被硬数据直接证伪（例：基本面声称"营收增 50%"但实际 -10%）
+  · 财务爆雷风险（流动性危机、SEC 调查、退市风险）
+  · 财报日裸卖期权
+- **WARNING**：论点有缺陷但仍可行，需用户警觉，**不阻止下单**
+  · 反方论点不够充分
+  · 某个失败信号不够量化
+  · 个别催化剂引用不全
+- **INFO**：完整性 / 格式问题，纯告知
 
-输出 Markdown 段落，以 `## 自审批注（红队复核）` 为标题。
+# 类别（决定是否阻止下单）
+
+- **DATA_LIMITATION** — 因为工具拿不到数据（Nitter 挂了 / 搜索被限速 / yfinance 失败）。
+  **这是系统问题，绝不应被列为 BLOCKER**。最多 WARNING，提醒用户某项信号缺失即可。
+- **THESIS_WEAKNESS** — 论点本身有洞（数据被证伪、逻辑链断裂）
+- **RULE_VIOLATION** — 触犯规则库
+- **RISK_BUDGET** — 仓位 / 集中度超限
+- **BLIND_SPOT** — 重要催化剂 / 风险被忽略
+- **FAILURE_SIGNAL** — 失败信号不可观察 / 不量化
+
+# 输出要求
+
+先输出**结构化 JSON**，包在 ```json 块里，**严格按 schema**：
+
+```json
+{{
+  "findings": [
+    {{
+      "severity": "BLOCKER" | "WARNING" | "INFO",
+      "category": "DATA_LIMITATION" | "THESIS_WEAKNESS" | "RULE_VIOLATION" | "RISK_BUDGET" | "BLIND_SPOT" | "FAILURE_SIGNAL",
+      "affected_tickers": ["$AXTI"],
+      "title": "≤30字简短标题",
+      "detail": "详细说明，引用具体数据/规则编号",
+      "actionable": "用户应该怎么做"
+    }}
+  ],
+  "overall_verdict": "PROCEED" | "PROCEED_WITH_CAUTION" | "AVOID_ALL"
+}}
+```
+
+`affected_tickers` 用 `["*"]` 表示"影响全部推荐"。
+
+**自检**：
+- 你的 `BLOCKER` 项**不能**有 `DATA_LIMITATION` 类别
+- 如果某只票没有 BLOCKER + 非 DATA_LIMITATION 的发现，它就可以正常下单
+- `overall_verdict`：有任何 BLOCKER(非 DATA_LIMITATION) → AVOID_ALL；只有 WARNING → PROCEED_WITH_CAUTION；只有 INFO 或啥都没 → PROCEED
+
+JSON 之后再追加一段 markdown 评论，以 `## 自审批注（红队复核）` 为标题，给人类阅读。
 
 待审报告：
 ---
