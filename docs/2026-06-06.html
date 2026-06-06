@@ -156,6 +156,38 @@ header.app-head .subtitle { color: var(--text-dim); font-size: 13px; margin-top:
 .critic-body { padding: 0 18px 16px; font-size: 13px; color: var(--text-dim); line-height: 1.7; }
 .critic-body p { margin: 0 0 10px; }
 
+/* Reasoning chain (5-layer thinking funnel) */
+.reasoning { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 12px; }
+.reasoning summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); list-style: none; padding: 4px 0; user-select: none; }
+.reasoning summary::-webkit-details-marker { display: none; }
+.reasoning summary::before { content: "▸ "; color: var(--text-dim); }
+.reasoning[open] summary::before { content: "▾ "; }
+.reasoning-body { padding-top: 10px; }
+.layer-row { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 13px; }
+.layer-row.failure { color: var(--watch); border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 8px; }
+.layer-section { padding: 8px 0; }
+.layer-tag { flex-shrink: 0; min-width: 88px; font-size: 11px; color: var(--text-dim); padding-top: 2px; font-weight: 600; letter-spacing: 0.02em; }
+.scorecard { margin-top: 6px; }
+.score-avg { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+.score-avg strong { color: var(--text); font-size: 13px; }
+.score-row { display: grid; grid-template-columns: 100px 1fr 28px; gap: 8px; align-items: center; padding: 3px 0; font-size: 12px; }
+.score-label { color: var(--text-dim); }
+.score-track { background: #EEE9DF; height: 8px; border-radius: 4px; overflow: hidden; }
+.score-fill { display: block; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.score-val { text-align: right; font-family: ui-monospace, "SF Mono", monospace; color: var(--text); font-weight: 600; }
+
+/* Findings (severity-graded red team) */
+.findings { display: grid; gap: 10px; }
+.finding { border-left: 4px solid; border-radius: 8px; padding: 12px 14px; }
+.finding-head { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; align-items: center; margin-bottom: 6px; }
+.finding-sev { font-weight: 700; letter-spacing: 0.04em; }
+.finding-cat { color: var(--text-dim); font-family: ui-monospace, "SF Mono", monospace; }
+.finding-tickers { color: var(--text-dim); font-family: ui-monospace, "SF Mono", monospace; }
+.data-lim-tag { background: var(--card); color: var(--text-dim); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); font-weight: 600; }
+.finding-title { font-size: 14px; margin-bottom: 4px; }
+.finding-detail { font-size: 13px; color: var(--text); line-height: 1.55; margin-bottom: 6px; }
+.finding-action { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
 footer.app-foot { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; text-align: center; }
 footer.app-foot a { color: var(--text-dim); }
 </style>
@@ -176,9 +208,9 @@ footer.app-foot a { color: var(--text-dim); }
       <div class="banner-counts">
         <span class="count-buy">🟢 BUY <strong>0</strong></span>
         <span class="count-watch">🟡 WATCH <strong>0</strong></span>
-        <span class="count-avoid">🔴 AVOID <strong>2</strong></span>
+        <span class="count-avoid">🔴 AVOID <strong>3</strong></span>
       </div>
-      <div class="warning">🚨 红队发现 CRITICAL 问题，所有推荐已自动降级</div>
+      <div class="warning">🛑 红队 3 项 BLOCKER 触发，受影响标的已降级 AVOID（下方审计区有详情）</div>
     </section>
     
   <section class="section">
@@ -203,17 +235,30 @@ footer.app-foot a { color: var(--text-dim); }
       
     <div class="zone-bar-wrap">
       <div class="zone-bar">
-        <div class="zone-entry" style="left:22.6%;width:15.7%" title="入场区 $75-$85"></div>
-        <div class="marker stop" style="left:6.9%" title="止损 $65.0"></div><div class="marker-label stop-label" style="left:6.9%">stop $65</div><div class="marker target" style="left:93.1%" title="止盈 $120.0"></div><div class="marker-label target-label" style="left:93.1%">target $120</div><div class="marker current" style="left:44.6%" title="当前 $89.04"></div><div class="marker-label current-label" style="left:44.6%">$89.04</div>
+        <div class="zone-entry" style="left:22.0%;width:15.1%" title="入场区 $85-$92"></div>
+        <div class="marker stop" style="left:6.9%" title="止损 $78.0"></div><div class="marker-label stop-label" style="left:6.9%">stop $78</div><div class="marker target" style="left:93.1%" title="止盈 $118.0"></div><div class="marker-label target-label" style="left:93.1%">target $118</div><div class="marker current" style="left:30.7%" title="当前 $89.04"></div><div class="marker-label current-label" style="left:30.7%">$89.04</div>
       </div>
     </div>
     
       <div class="pick-meta">
-        <div class="meta-row"><span class="meta-key">入场区间</span><span class="meta-val">75.00-85.00 (Sell Put strike $75, 30-45 DTE)</span></div>
-        <div class="meta-row"><span class="meta-key">结构</span><span class="meta-val">Sell Put 30Δ (现金担保)，等周一/二企稳信号后执行</span></div>
+        <div class="meta-row"><span class="meta-key">入场区间</span><span class="meta-val">85.00-92.00</span></div>
+        <div class="meta-row"><span class="meta-key">结构</span><span class="meta-val">Sell Cash-Secured Put $85 30-45DTE Δ≈0.30</span></div>
       </div>
-      <div class="pick-thesis">高纯铟/镓/锗瓶颈龙头，今日-14%为恐慌而非基本面逆转，Serenity核心持仓，等待缩量企稳后卖Put</div>
-      <div class="pick-reason"><span class="reason-icon">⚠️</span> 红队发现 CRITICAL 问题</div>
+      <div class="pick-thesis">从ATH暴跌36.8%后，高纯铟/镓/锗的CPO瓶颈逻辑未变，散户恐慌清仓=买入窗口</div>
+      <div class="pick-reason"><span class="reason-icon">⚠️</span> 红队 BLOCKER: 新仓位合计远超15%硬上限</div>
+      
+    <details class="reasoning">
+      <summary>🔬 为什么这只票（5 层思考漏斗）</summary>
+      <div class="reasoning-body">
+        <div class="layer-row"><span class="layer-tag">L1 催化剂</span><span>Broadcom弱指引+就业数据+中国听证会三重利空导致的板块系统性去风险</span></div>
+        <div class="layer-row"><span class="layer-tag">L2 供应链节点</span><span>7N高纯铟/镓/锗 — CPO InP衬底和GaN的绝对瓶颈材料</span></div>
+        <div class="layer-section"><span class="layer-tag">L3 7 维度打分</span><div class="scorecard"><div class="score-avg">总分 <strong>7.4</strong> / 10</div><div class="score-row"><span class="score-label">产能/需求剪刀差</span><span class="score-track"><span class="score-fill" style="width:100%;background:var(--buy)"></span></span><span class="score-val">10</span></div><div class="score-row"><span class="score-label">替代难度</span><span class="score-track"><span class="score-fill" style="width:90%;background:var(--buy)"></span></span><span class="score-val">9</span></div><div class="score-row"><span class="score-label">估值安全垫</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div><div class="score-row"><span class="score-label">财务质量</span><span class="score-track"><span class="score-fill" style="width:60%;background:var(--watch)"></span></span><span class="score-val">6</span></div><div class="score-row"><span class="score-label">技术形态</span><span class="score-track"><span class="score-fill" style="width:50%;background:var(--watch)"></span></span><span class="score-val">5</span></div><div class="score-row"><span class="score-label">期权链流动性</span><span class="score-track"><span class="score-fill" style="width:50%;background:var(--watch)"></span></span><span class="score-val">5</span></div><div class="score-row"><span class="score-label">反向关注度</span><span class="score-track"><span class="score-fill" style="width:90%;background:var(--buy)"></span></span><span class="score-val">9</span></div></div></div>
+        <div class="layer-row"><span class="layer-tag">L4 社交信号</span><span>Serenity核心持仓，散户-14%恐慌清仓，极度超卖后的反向买入窗口</span></div>
+        <div class="layer-row"><span class="layer-tag">L5 期权结构</span><span>IV飙升后sell put赚取高额IV premium+时间价值，低Delta控制风险</span></div>
+        <div class="layer-row failure"><span class="layer-tag">⚠ 失败信号</span><span>最先在周度InP衬底现货价格上看到连续2周下跌的变化</span></div>
+      </div>
+    </details>
+    
     </article>
     
     <article class="pick-card verdict-avoid">
@@ -235,24 +280,88 @@ footer.app-foot a { color: var(--text-dim); }
       
     <div class="zone-bar-wrap">
       <div class="zone-bar">
-        <div class="zone-entry" style="left:22.6%;width:7.8%" title="入场区 $820-$840"></div>
-        <div class="marker stop" style="left:6.9%" title="止损 $780.0"></div><div class="marker-label stop-label" style="left:6.9%">stop $780</div><div class="marker target" style="left:93.1%" title="止盈 $1000.0"></div><div class="marker-label target-label" style="left:93.1%">target $1000</div><div class="marker current" style="left:39.7%" title="当前 $863.66"></div><div class="marker-label current-label" style="left:39.7%">$863.66</div>
+        <div class="zone-entry" style="left:25.8%;width:12.6%" title="入场区 $840-$870"></div>
+        <div class="marker stop" style="left:6.9%" title="止损 $795.0"></div><div class="marker-label stop-label" style="left:6.9%">stop $795</div><div class="marker target" style="left:93.1%" title="止盈 $1000.0"></div><div class="marker-label target-label" style="left:93.1%">target $1000</div><div class="marker current" style="left:35.8%" title="当前 $863.66"></div><div class="marker-label current-label" style="left:35.8%">$863.66</div>
       </div>
     </div>
     
       <div class="pick-meta">
-        <div class="meta-row"><span class="meta-key">入场区间</span><span class="meta-val">820.00-840.00</span></div>
-        <div class="meta-row"><span class="meta-key">结构</span><span class="meta-val">正股或 Buy Call (等待企稳后，IV较低时)</span></div>
+        <div class="meta-row"><span class="meta-key">入场区间</span><span class="meta-val">840.00-870.00</span></div>
+        <div class="meta-row"><span class="meta-key">结构</span><span class="meta-val">正股分批建仓或Sell Put $850 45DTE</span></div>
       </div>
-      <div class="pick-thesis">CPO 800G/1.6T光模块龙头，今日-6%远跑赢板块均值，估值已提前修正，等待$820-840区域建仓</div>
-      <div class="pick-reason"><span class="reason-icon">⚠️</span> 红队发现 CRITICAL 问题</div>
+      <div class="pick-thesis">CPO 800G/1.6T光模块瓶颈股，换股去杠杆+AI拉动，被宏观拖下来而非基本面恶化</div>
+      <div class="pick-reason"><span class="reason-icon">⚠️</span> 红队 BLOCKER: 新仓位合计远超15%硬上限</div>
+      
+    <details class="reasoning">
+      <summary>🔬 为什么这只票（5 层思考漏斗）</summary>
+      <div class="reasoning-body">
+        <div class="layer-row"><span class="layer-tag">L1 催化剂</span><span>Broadcom弱指引引发AI相关全线下跌，LITE被误伤</span></div>
+        <div class="layer-row"><span class="layer-tag">L2 供应链节点</span><span>CPO 800G/1.6T光模块—AI数据中心网络瓶颈</span></div>
+        <div class="layer-section"><span class="layer-tag">L3 7 维度打分</span><div class="scorecard"><div class="score-avg">总分 <strong>6.0</strong> / 10</div><div class="score-row"><span class="score-label">产能/需求剪刀差</span><span class="score-track"><span class="score-fill" style="width:90%;background:var(--buy)"></span></span><span class="score-val">9</span></div><div class="score-row"><span class="score-label">替代难度</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div><div class="score-row"><span class="score-label">估值安全垫</span><span class="score-track"><span class="score-fill" style="width:40%;background:var(--watch)"></span></span><span class="score-val">4</span></div><div class="score-row"><span class="score-label">财务质量</span><span class="score-track"><span class="score-fill" style="width:60%;background:var(--watch)"></span></span><span class="score-val">6</span></div><div class="score-row"><span class="score-label">技术形态</span><span class="score-track"><span class="score-fill" style="width:30%;background:var(--avoid)"></span></span><span class="score-val">3</span></div><div class="score-row"><span class="score-label">期权链流动性</span><span class="score-track"><span class="score-fill" style="width:70%;background:var(--buy)"></span></span><span class="score-val">7</span></div><div class="score-row"><span class="score-label">反向关注度</span><span class="score-track"><span class="score-fill" style="width:50%;background:var(--watch)"></span></span><span class="score-val">5</span></div></div></div>
+        <div class="layer-row"><span class="layer-tag">L4 社交信号</span><span>Serenity曾明确持仓CPO光模块，WSB散户恐慌出清中</span></div>
+        <div class="layer-row"><span class="layer-tag">L5 期权结构</span><span>正股更适合避免IV溢价或sell put利用高IV</span></div>
+        <div class="layer-row failure"><span class="layer-tag">⚠ 失败信号</span><span>最先在800G光模块订单取消/延期传闻上看到来自Hyperscaler的订单削减</span></div>
+      </div>
+    </details>
+    
+    </article>
+    
+    <article class="pick-card verdict-avoid">
+      <div class="pick-ribbon">AVOID</div>
+      <div class="pick-head">
+        <div>
+          <div class="ticker">$HUBB</div>
+          <div class="direction">LONG</div>
+        </div>
+        <div class="price-block">
+          <div class="price">$476.82</div>
+          <div class="change down">-1.67%</div>
+        </div>
+      </div>
+      <div class="pick-trend">
+        <svg viewBox="0 0 140 40" width="140" height="40" xmlns="http://www.w3.org/2000/svg" class="sparkline"><path d="M 0.0,38.0 L 35.0,9.8 L 70.0,2.6 L 105.0,2.0 L 140.0,15.6 L 140,40 L 0,40 Z" fill="#B91C1C" fill-opacity="0.08"/><path d="M 0.0,38.0 L 35.0,9.8 L 70.0,2.6 L 105.0,2.0 L 140.0,15.6" fill="none" stroke="#B91C1C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="trend-label">5日 +3.0%</div>
+      </div>
+      
+    <div class="zone-bar-wrap">
+      <div class="zone-bar">
+        <div class="zone-entry" style="left:31.5%;width:12.3%" title="入场区 $470-$480"></div>
+        <div class="marker stop" style="left:6.9%" title="止损 $450.0"></div><div class="marker-label stop-label" style="left:6.9%">stop $450</div><div class="marker target" style="left:93.1%" title="止盈 $520.0"></div><div class="marker-label target-label" style="left:93.1%">target $520</div><div class="marker current" style="left:39.9%" title="当前 $476.82"></div><div class="marker-label current-label" style="left:39.9%">$476.82</div>
+      </div>
+    </div>
+    
+      <div class="pick-meta">
+        <div class="meta-row"><span class="meta-key">入场区间</span><span class="meta-val">470.00-480.00</span></div>
+        <div class="meta-row"><span class="meta-key">结构</span><span class="meta-val">正股</span></div>
+      </div>
+      <div class="pick-thesis">变压器瓶颈不可解+AI数据中心电力需求+仅跌1.67%=今日最强韧性</div>
+      <div class="pick-reason"><span class="reason-icon">⚠️</span> 红队 BLOCKER: 新仓位合计远超15%硬上限</div>
+      
+    <details class="reasoning">
+      <summary>🔬 为什么这只票（5 层思考漏斗）</summary>
+      <div class="reasoning-body">
+        <div class="layer-row"><span class="layer-tag">L1 催化剂</span><span>就业数据→降息预期清零，但HUBB仅跌1.67%显示结构性需求支撑</span></div>
+        <div class="layer-row"><span class="layer-tag">L2 供应链节点</span><span>电力变压器—AI数据中心供电瓶颈，lead time&gt;2年</span></div>
+        <div class="layer-section"><span class="layer-tag">L3 7 维度打分</span><div class="scorecard"><div class="score-avg">总分 <strong>7.4</strong> / 10</div><div class="score-row"><span class="score-label">产能/需求剪刀差</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div><div class="score-row"><span class="score-label">替代难度</span><span class="score-track"><span class="score-fill" style="width:70%;background:var(--buy)"></span></span><span class="score-val">7</span></div><div class="score-row"><span class="score-label">估值安全垫</span><span class="score-track"><span class="score-fill" style="width:70%;background:var(--buy)"></span></span><span class="score-val">7</span></div><div class="score-row"><span class="score-label">财务质量</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div><div class="score-row"><span class="score-label">技术形态</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div><div class="score-row"><span class="score-label">期权链流动性</span><span class="score-track"><span class="score-fill" style="width:60%;background:var(--watch)"></span></span><span class="score-val">6</span></div><div class="score-row"><span class="score-label">反向关注度</span><span class="score-track"><span class="score-fill" style="width:80%;background:var(--buy)"></span></span><span class="score-val">8</span></div></div></div>
+        <div class="layer-row"><span class="layer-tag">L4 社交信号</span><span>非热门AI票，散户关注低，无恐慌抛售压力</span></div>
+        <div class="layer-row"><span class="layer-tag">L5 期权结构</span><span>正股持有，IV不高sell put不划算</span></div>
+        <div class="layer-row failure"><span class="layer-tag">⚠ 失败信号</span><span>最先在变压器lead time从&gt;2年缩短到&lt;18个月的变化</span></div>
+      </div>
+    </details>
+    
     </article>
     </div>
   </section>
   
     <section class="section">
       <h2>📰 最新新闻</h2>
-      <div class="news-grid"><div class="news-card"><h3>$AXTI</h3><ul><li><a href="https://finance.yahoo.com/sectors/technology/articles/axtis-capacity-expansion-cement-ai-152000604.html" target="_blank" rel="noopener">AXTI&#x27;s Capacity Expansion: Will It Cement AI Supply-Chain Leadership?</a> <span class="news-pub">Zacks</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/three-stocks-may-trading-below-173814761.html" target="_blank" rel="noopener">Three Stocks That May Be Trading Below Estimated Value In May 2026</a> <span class="news-pub">Simply Wall St.</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/looking-top-momentum-pick-why-160004554.html" target="_blank" rel="noopener">Are You Looking for a Top Momentum Pick? Why AXT (AXTI) is a Great Choice</a> <span class="news-pub">Zacks</span></li></ul></div><div class="news-card"><h3>$LITE</h3><ul><li><a href="https://www.wsj.com/livecoverage/may-jobs-report-stock-market-06-05-2026/card/stocks-to-watch-lululemon-broadcom-lumentum-holdings-JNe0Igf0hcn4NHX9cbZn?siteid=yhoof2&amp;yptr=yahoo" target="_blank" rel="noopener">Stocks to Watch Recap: Lululemon, Broadcom, Lumentum Holdings</a> <span class="news-pub">The Wall Street Journal</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/why-lumentum-holdings-lite-9-211725818.html" target="_blank" rel="noopener">Why Lumentum Holdings (LITE) Is Up 9.8% After Major Note Swap, AI Boost And U.S. Expansion</a> <span class="news-pub">Simply Wall St.</span></li><li><a href="https://www.trefis.com/articles/601621/cienas-mountain-of-orders-is-starting-to-look-a-little-scary/2026-06-05" target="_blank" rel="noopener">Ciena&#x27;s Mountain Of Orders Is Starting To Look A Little Scary</a> <span class="news-pub">Trefis</span></li></ul></div></div>
+      <div class="news-grid"><div class="news-card"><h3>$AXTI</h3><ul><li><a href="https://finance.yahoo.com/sectors/technology/articles/axtis-capacity-expansion-cement-ai-152000604.html" target="_blank" rel="noopener">AXTI&#x27;s Capacity Expansion: Will It Cement AI Supply-Chain Leadership?</a> <span class="news-pub">Zacks</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/three-stocks-may-trading-below-173814761.html" target="_blank" rel="noopener">Three Stocks That May Be Trading Below Estimated Value In May 2026</a> <span class="news-pub">Simply Wall St.</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/looking-top-momentum-pick-why-160004554.html" target="_blank" rel="noopener">Are You Looking for a Top Momentum Pick? Why AXT (AXTI) is a Great Choice</a> <span class="news-pub">Zacks</span></li></ul></div><div class="news-card"><h3>$LITE</h3><ul><li><a href="https://www.wsj.com/livecoverage/may-jobs-report-stock-market-06-05-2026/card/stocks-to-watch-lululemon-broadcom-lumentum-holdings-JNe0Igf0hcn4NHX9cbZn?siteid=yhoof2&amp;yptr=yahoo" target="_blank" rel="noopener">Stocks to Watch Recap: Lululemon, Broadcom, Lumentum Holdings</a> <span class="news-pub">The Wall Street Journal</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/why-lumentum-holdings-lite-9-211725818.html" target="_blank" rel="noopener">Why Lumentum Holdings (LITE) Is Up 9.8% After Major Note Swap, AI Boost And U.S. Expansion</a> <span class="news-pub">Simply Wall St.</span></li><li><a href="https://www.trefis.com/articles/601621/cienas-mountain-of-orders-is-starting-to-look-a-little-scary/2026-06-05" target="_blank" rel="noopener">Ciena&#x27;s Mountain Of Orders Is Starting To Look A Little Scary</a> <span class="news-pub">Trefis</span></li></ul></div><div class="news-card"><h3>$HUBB</h3><ul><li><a href="https://finance.yahoo.com/markets/stocks/articles/hubbell-hubb-investment-narrative-evolving-231103473.html" target="_blank" rel="noopener">How The Hubbell (HUBB) Investment Narrative Is Evolving Without New Analyst Guidance</a> <span class="news-pub">Simply Wall St.</span></li><li><a href="https://finance.yahoo.com/sectors/technology/articles/ai-data-center-demand-accelerate-145200907.html" target="_blank" rel="noopener">Can AI Data Center Demand Accelerate nVent Electric&#x27;s Revenue Growth?</a> <span class="news-pub">Zacks</span></li><li><a href="https://finance.yahoo.com/markets/stocks/articles/2-cash-producing-stocks-buy-133724037.html" target="_blank" rel="noopener">2 Cash-Producing Stocks on Our Buy List and 1 We Question</a> <span class="news-pub">StockStory</span></li></ul></div></div>
+    </section>
+    
+  
+    <section class="section">
+      <h2>🛡️ 红队审计（按严重级别分级）</h2>
+      <div class="findings"><div class="finding finding-blocker" style="border-left-color:var(--avoid);background:var(--avoid-soft)"><div class="finding-head"><span class="finding-sev">🛑 BLOCKER</span><span class="finding-cat">RISK_BUDGET</span><span class="finding-tickers">$AXTI, $LITE, $HUBB</span></div><div class="finding-title"><strong>新仓位合计远超15%硬上限</strong></div><div class="finding-detail">报告Layer 5明确要求「新仓位 ≤ 总仓位 15%」，但AXTI推荐仓位8-12%、LITE推荐5-8%、HUBB推荐5-8%，三者之和最低18%（8+5+5），最高28%（12+8+8），严重突破硬上限。这构成实质性风控违规。</div><div class="finding-action">→ 用户应取消所有新仓位建议，或仅保留一个标的且仓位严格不超过15%。同时核查报告为何无视自身风控规则。</div></div><div class="finding finding-blocker" style="border-left-color:var(--avoid);background:var(--avoid-soft)"><div class="finding-head"><span class="finding-sev">🛑 BLOCKER</span><span class="finding-cat">RULE_VIOLATION</span><span class="finding-tickers">$AXTI, $LITE, $HUBB</span></div><div class="finding-title"><strong>WSB反规则触发但未执行限制</strong></div><div class="finding-detail">反规则检查中WSB Top 3 热帖评论&gt;5000标记为「很可能触发」，报告结论是「假设触发 → 当日不开新仓，或只开1/3仓位」。但后续推荐仍给出满额仓位（AXTI 8-12%等），未按规则执行减仓或停止开仓。这是直接违反报告自定的操作纪律。</div><div class="finding-action">→ 用户应严格执行反规则：若WSB热帖触发，当日不开新仓或最多1/3仓位。当前推荐无效。</div></div><div class="finding finding-warning" style="border-left-color:var(--watch);background:var(--watch-soft)"><div class="finding-head"><span class="finding-sev">⚠️ WARNING</span><span class="finding-cat">DATA_LIMITATION</span><span class="finding-tickers">$AXTI, $LITE</span></div><div class="finding-title"><strong>Serenity社交信号数据缺失</strong></div><div class="finding-detail">报告Layer 4明确说明「工具未能成功从X拉取最新帖子」，但随后断言「不影响结论」。缺少关键持仓/情绪更新的情况下，散户恐慌的判断依赖于推测而非实时数据，存在信息缺失风险。</div><div class="finding-action">→ 用户应手动核查Serenity最新动态，在获取信号前对依赖该信号的标的（AXTI、LITE）保持谨慎。</div></div><div class="finding finding-warning" style="border-left-color:var(--watch);background:var(--watch-soft)"><div class="finding-head"><span class="finding-sev">⚠️ WARNING</span><span class="finding-cat">FAILURE_SIGNAL</span><span class="finding-tickers">$AXTI</span></div><div class="finding-title"><strong>AXTI失败信号观察难度高</strong></div><div class="finding-detail">报告将AXTI失败信号设为「周度InP衬底现货价格连续2周下跌」，但该价格数据并非标准化公开数据（可能需付费或专业机构获取），散户或一般投资者难以实时跟踪。失败信号应具备可操作、可观测性。</div><div class="finding-action">→ 建议补充更易观测的次要信号（例如AXTI自身季度营收增速、中国出口管制政策变动等），并明确告知用户原始信号的获取渠道。</div></div></div>
     </section>
     
   
@@ -260,19 +369,15 @@ footer.app-foot a { color: var(--text-dim); }
       <details class="critic">
         <summary>🛡️ 红队自审批注（点击展开）</summary>
         <div class="critic-body"><p>
-🚨 <strong>CRITICAL ISSUES FOUND</strong></p><p><strong>漏洞 1（严重 · 数据来源缺失）</strong>  
-报告中的多数核心论点、催化剂数据和事件陈述（如NFP 172K、AVGO未上调指引、Rubin HBM容量削减传言、BNP Paribas $500亿估算）均未提供任何可追溯的URL或公开来源。虽然这些信息很可能出自彭博、路透或财报电话会，但作为一份需独立验证的审计报告，缺乏引用使整个底层数据链不可审计。此外，社交信号抓取失败（Serenity无最新信号）后，仅凭推断得出结论（“他要么在买入更多，要么在卖put”），这在红队眼中是高风险——无法排除作者为支撑自身论点而编造情绪判断。</p><p><strong>漏洞 2（严重 · 风险预算不可审计）</strong>  
-报告在“风险预算总表”中声明当前状态为“观望”，但未披露任何现有持仓信息。因此无法核实是否已违反“单标的15% / 单板块35%”的限制。例如，若已持有大量AXTI（此前可能是核心持仓），则今日建议再对其加仓（Sell Put）可能导致仓位超标。同时，AXTI和LITE的推荐并未配有仓位权重说明，违反了该策略对风险预算的透明要求。</p><p><strong>漏洞 3（中等 · 反方论点不完整）</strong>  
-- AXTI的反方仅强调“跌破前低$65则瓶颈叙事失效”，但未考虑高纯金属自身现货价格下跌、中国放松出口管制等更直接的反面因素。报告承认中国出口管制“只会加剧”，但未给出支持这一结论的数据溯源（例如最新海关或商务部公告），因此反方实际是稻草人——只攻击价格形态，而非基本面核心假设。  
-- LITE的反方依赖于COHR跌破$350的联动信号，但COHR本身与LITE的业务重合度（光模块vs激光器）存在差异，且未考虑LITE可能因个股独立事件（如财报/客户流失）而补跌，导致证伪信号模糊。</p><p><strong>漏洞 4（低 · 盲点遗漏）</strong>  
-报告未分析AVGO自身受冲击后的传导效应（AVGO作为AI网络芯片龙头，其股价下跌会进一步压制板块情绪），也未讨论非AI板块（如防御型公用事业/必选消费）是否出现资金轮动——这在宏观恐慌日通常是重要观察点，但报告完全忽略。此外，HBM4认证已被定价的描述缺乏时效性确认（Jensen的声明是否发生在暴跌前还是暴跌后？若在暴跌后，可能已经是旧闻）。</p><p><strong>漏洞 5（低 · 失败信号量化瑕疵）</strong>  
-LITE的失败信号“跌破$830/$350”中，$830是LITE的支撑吗？报告未给出LITE当前价格（仅写-6.31%，未列出现价），导致该量化信号在报告内无法独立验证。需补充当前收盘价或30日K线图参考。</p><p>---</p><p><strong>总结</strong>：因数据来源缺失和风险预算不可审计这两个严重漏洞，本报告未通过红队复核。建议补充所有核心论点的URL引用，披露当前真实持仓比例，并强化反方论点的基本面覆盖。在修正前，不应执行任何交易动作。
+<strong>结论：这份扫描报告自身存在重大逻辑矛盾，强烈建议暂不执行任何推荐。</strong></p><p>关键问题有两点：  
+1. <strong>风控自相矛盾</strong>。报告一方面要求“新仓位 ≤ 15%”，另一方面给出三只票合计18-28%的仓位建议，这是绝对不可接受的BLOCKER。如果我是下单员，以这份报告为指令一定会触犯风控规则。  
+2. <strong>无视自身规则</strong>。反规则检查已经警示WSB热帖可能触发“不开新仓”，但推荐却100%开仓（甚至无减仓）。规则写出来挂在报告里却不遵守，比没有规则更危险。</p><p>此外，数据缺失（Serenity信号拉取失败）被轻描淡写为“不影响结论”，这对依赖“散户恐慌”逻辑的AXTI/LITE非常关键；AXTI的失败信号不透明，实际监控难度高。</p><p><strong>红队判罚：AVOID_ALL。</strong> 用户应等待一份修正了自冲突、遵守了反规则、且补充了缺失信息的新版报告再做决策。
 </p></div>
       </details>
     </section>
     
   <footer class="app-foot">
-    生成时间 2026-06-06 13:06 UTC · 数据来源 Yahoo Finance (~15分钟延迟) ·
+    生成时间 2026-06-06 14:38 UTC · 数据来源 Yahoo Finance (~15分钟延迟) ·
     <a href="https://github.com/beer98/pipboy-ai-vault">GitHub</a>
   </footer>
 </div>
