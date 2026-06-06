@@ -24,7 +24,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lib import archiver, enrich, ledger, llm, prompts  # noqa: E402
+from lib import archiver, dashboard, enrich, ledger, llm, prompts  # noqa: E402
+
+# repo-root/docs/ for GitHub Pages
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DOCS_DIR = REPO_ROOT / "docs"
 
 
 def _today() -> str:
@@ -145,6 +149,23 @@ def phase_e_enrich(target_path: Path) -> dict:
     return {"ok": True, "picks_enriched": len(picks)}
 
 
+# ---------- Phase F: HTML dashboard (light-mode, GH Pages) ----------
+
+
+def phase_f_dashboard(target_path: Path) -> dict:
+    text = target_path.read_text(encoding="utf-8")
+    picks_block = archiver.extract_json(text)
+    if not picks_block or "picks" not in picks_block:
+        print("[F] no picks JSON, skipping dashboard", file=sys.stderr)
+        return {"skipped": True, "reason": "no_picks"}
+    picks = picks_block["picks"]
+    date_str = target_path.stem  # YYYY-MM-DD
+    print(f"[F] rendering HTML dashboard for {date_str}", file=sys.stderr)
+    out = dashboard.write_dashboard(picks, text, date_str, DOCS_DIR)
+    print(f"[F] wrote docs/{out.name} and docs/index.html", file=sys.stderr)
+    return {"ok": True, "path": str(out.name)}
+
+
 # ---------- commands ----------
 
 
@@ -156,6 +177,7 @@ def cmd_loop(_args) -> int:
     summary["phases"]["C"] = {"ok": True, "path": str(target.name)}
     summary["phases"]["D"] = phase_d_critic(report_text, target)
     summary["phases"]["E"] = phase_e_enrich(target)
+    summary["phases"]["F"] = phase_f_dashboard(target)
     summary["ledger_stats"] = ledger.stats_summary()
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str), file=sys.stderr)
     return 0

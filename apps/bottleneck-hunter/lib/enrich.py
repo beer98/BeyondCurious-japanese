@@ -147,14 +147,16 @@ def _news_block(rows: list[dict]) -> str:
 # ---------- Entry point ----------
 
 
-def build_enrichment(picks: list[dict], report_text: str) -> str:
-    """Fetch fresh data for each pick and build the top-of-report card."""
-    if not picks:
-        return ""
+def fetch_rows(picks: list[dict], report_text: str) -> list[dict]:
+    """Fetch fresh quote/chart/news data for each pick and compute verdict.
 
+    Returns enriched rows. Used by both build_enrichment (Markdown injection)
+    and dashboard.render (HTML output).
+    """
+    if not picks:
+        return []
     critic_flagged = _critic_has_critical(report_text)
     rows: list[dict] = []
-
     for p in picks:
         ticker = (p.get("ticker") or "").lstrip("$").strip()
         if not ticker:
@@ -171,11 +173,18 @@ def build_enrichment(picks: list[dict], report_text: str) -> str:
                 "news": news,
                 "verdict": emoji_label,
                 "reason": reason,
+                "critic_flagged": critic_flagged,
             }
         )
+    return rows
 
+
+def build_enrichment(picks: list[dict], report_text: str) -> str:
+    """Build the markdown block to prepend to the report."""
+    rows = fetch_rows(picks, report_text)
     if not rows:
         return ""
+    critic_flagged = rows[0]["critic_flagged"]
 
     # Build summary at the top
     buy_count = sum(1 for r in rows if r["verdict"].startswith("🟢"))
