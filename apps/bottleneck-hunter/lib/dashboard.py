@@ -145,6 +145,139 @@ def _format_cap(v: int | None) -> str:
     return f"${v}"
 
 
+# ---- Reasoning chain (5-layer thinking funnel) ----
+
+SCORECARD_LABELS = {
+    "shears": "产能/需求剪刀差",
+    "substitutability": "替代难度",
+    "valuation": "估值安全垫",
+    "financials": "财务质量",
+    "technicals": "技术形态",
+    "options": "期权链流动性",
+    "attention_inverse": "反向关注度",
+}
+
+
+def _scorecard_bars(scorecard: dict) -> str:
+    """Render the 7-dim scorecard as horizontal bars (light mode)."""
+    if not scorecard:
+        return ""
+    rows = []
+    total = 0
+    count = 0
+    for key, label in SCORECARD_LABELS.items():
+        raw = scorecard.get(key)
+        try:
+            val = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            val = None
+        if val is None:
+            display = "—"
+            width = 0
+            color = "var(--text-dim)"
+        else:
+            val = max(0, min(10, val))
+            total += val
+            count += 1
+            display = f"{val:.0f}"
+            width = val * 10  # %
+            if val >= 7:
+                color = "var(--buy)"
+            elif val >= 4:
+                color = "var(--watch)"
+            else:
+                color = "var(--avoid)"
+        rows.append(
+            f'<div class="score-row">'
+            f'<span class="score-label">{label}</span>'
+            f'<span class="score-track"><span class="score-fill" style="width:{width:.0f}%;background:{color}"></span></span>'
+            f'<span class="score-val">{display}</span>'
+            f'</div>'
+        )
+    avg = total / count if count else 0
+    summary = f'<div class="score-avg">总分 <strong>{avg:.1f}</strong> / 10</div>'
+    return f'<div class="scorecard">{summary}{"".join(rows)}</div>'
+
+
+def _reasoning_section(pick: dict) -> str:
+    """Per-pick 'why this stock' showing the 5-layer thinking chain."""
+    r = pick.get("reasoning") or {}
+    # Backward compat for old reports
+    catalyst = _esc(r.get("catalyst") or "—")
+    node = _esc(r.get("supply_chain_node") or "—")
+    social = _esc(r.get("social_signal") or "—")
+    options_play = _esc(r.get("options_play") or pick.get("structure") or "—")
+    failure = _esc(r.get("failure_signal") or "—")
+    scorecard = r.get("scorecard") or {}
+    bars = _scorecard_bars(scorecard)
+    return f"""
+    <details class="reasoning">
+      <summary>🔬 为什么这只票（5 层思考漏斗）</summary>
+      <div class="reasoning-body">
+        <div class="layer-row"><span class="layer-tag">L1 催化剂</span><span>{catalyst}</span></div>
+        <div class="layer-row"><span class="layer-tag">L2 供应链节点</span><span>{node}</span></div>
+        <div class="layer-section"><span class="layer-tag">L3 7 维度打分</span>{bars}</div>
+        <div class="layer-row"><span class="layer-tag">L4 社交信号</span><span>{social}</span></div>
+        <div class="layer-row"><span class="layer-tag">L5 期权结构</span><span>{options_play}</span></div>
+        <div class="layer-row failure"><span class="layer-tag">⚠ 失败信号</span><span>{failure}</span></div>
+      </div>
+    </details>
+    """
+
+
+# ---- Findings (severity-graded red team) ----
+
+
+SEVERITY_META = {
+    "BLOCKER": {"color": "var(--avoid)", "soft": "var(--avoid-soft)", "icon": "🛑"},
+    "WARNING": {"color": "var(--watch)", "soft": "var(--watch-soft)", "icon": "⚠️"},
+    "INFO":    {"color": "var(--text-dim)", "soft": "#F1F0EB", "icon": "ℹ"},
+}
+
+
+def _findings_section(findings: list[dict]) -> str:
+    if not findings:
+        return ""
+    # Sort: BLOCKER first, then WARNING, then INFO
+    sev_order = {"BLOCKER": 0, "WARNING": 1, "INFO": 2}
+    findings = sorted(findings, key=lambda f: sev_order.get(f.get("severity"), 3))
+    items = []
+    for f in findings:
+        sev = f.get("severity", "INFO")
+        meta = SEVERITY_META.get(sev, SEVERITY_META["INFO"])
+        cat = f.get("category", "")
+        is_data_lim = cat == "DATA_LIMITATION"
+        tickers = ", ".join(f.get("affected_tickers") or [])
+        if tickers == "*":
+            tickers = "全部"
+        title = _esc(f.get("title") or "")
+        detail = _esc(f.get("detail") or "")
+        actionable = _esc(f.get("actionable") or "")
+        non_blocking_note = ""
+        if sev == "BLOCKER" and is_data_lim:
+            non_blocking_note = ' <span class="data-lim-tag">系统问题·不阻止</span>'
+        items.append(
+            f'<div class="finding finding-{sev.lower()}" '
+            f'style="border-left-color:{meta["color"]};background:{meta["soft"]}">'
+            f'<div class="finding-head">'
+            f'<span class="finding-sev">{meta["icon"]} {sev}</span>'
+            f'<span class="finding-cat">{_esc(cat)}</span>'
+            f'<span class="finding-tickers">{tickers}</span>'
+            f'{non_blocking_note}'
+            f'</div>'
+            f'<div class="finding-title"><strong>{title}</strong></div>'
+            f'<div class="finding-detail">{detail}</div>'
+            f'<div class="finding-action">→ {actionable}</div>'
+            f'</div>'
+        )
+    return f"""
+    <section class="section">
+      <h2>🛡️ 红队审计（按严重级别分级）</h2>
+      <div class="findings">{"".join(items)}</div>
+    </section>
+    """
+
+
 # ---- Card components ----
 
 
@@ -197,6 +330,7 @@ def _pick_card(row: dict) -> str:
       </div>
       <div class="pick-thesis">{thesis}</div>
       <div class="pick-reason"><span class="reason-icon">{'⚠️' if verdict_cls == 'avoid' else '✓'}</span> {_esc(row['reason'])}</div>
+      {_reasoning_section(pick)}
     </article>
     """
 
@@ -261,11 +395,10 @@ def _critic_section(report_text: str) -> str:
 # ---- Top verdict banner ----
 
 
-def _verdict_banner(rows: list[dict]) -> str:
+def _verdict_banner(rows: list[dict], blocker_count: int = 0) -> str:
     buy = sum(1 for r in rows if r["verdict"].startswith("🟢"))
     watch = sum(1 for r in rows if r["verdict"].startswith("🟡"))
     avoid = sum(1 for r in rows if r["verdict"].startswith("🔴"))
-    critical = rows and rows[0].get("critic_flagged")
 
     if buy > 0:
         headline = f"今天可以下手 {buy} 只"
@@ -278,8 +411,8 @@ def _verdict_banner(rows: list[dict]) -> str:
         mood = "avoid"
 
     warning = ""
-    if critical:
-        warning = '<div class="warning">🚨 红队发现 CRITICAL 问题，所有推荐已自动降级</div>'
+    if blocker_count:
+        warning = f'<div class="warning">🛑 红队 {blocker_count} 项 BLOCKER 触发，受影响标的已降级 AVOID（下方审计区有详情）</div>'
 
     return f"""
     <section class="banner banner-{mood}">
@@ -449,6 +582,38 @@ header.app-head .subtitle { color: var(--text-dim); font-size: 13px; margin-top:
 .critic-body { padding: 0 18px 16px; font-size: 13px; color: var(--text-dim); line-height: 1.7; }
 .critic-body p { margin: 0 0 10px; }
 
+/* Reasoning chain (5-layer thinking funnel) */
+.reasoning { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 12px; }
+.reasoning summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); list-style: none; padding: 4px 0; user-select: none; }
+.reasoning summary::-webkit-details-marker { display: none; }
+.reasoning summary::before { content: "▸ "; color: var(--text-dim); }
+.reasoning[open] summary::before { content: "▾ "; }
+.reasoning-body { padding-top: 10px; }
+.layer-row { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 13px; }
+.layer-row.failure { color: var(--watch); border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 8px; }
+.layer-section { padding: 8px 0; }
+.layer-tag { flex-shrink: 0; min-width: 88px; font-size: 11px; color: var(--text-dim); padding-top: 2px; font-weight: 600; letter-spacing: 0.02em; }
+.scorecard { margin-top: 6px; }
+.score-avg { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+.score-avg strong { color: var(--text); font-size: 13px; }
+.score-row { display: grid; grid-template-columns: 100px 1fr 28px; gap: 8px; align-items: center; padding: 3px 0; font-size: 12px; }
+.score-label { color: var(--text-dim); }
+.score-track { background: #EEE9DF; height: 8px; border-radius: 4px; overflow: hidden; }
+.score-fill { display: block; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.score-val { text-align: right; font-family: ui-monospace, "SF Mono", monospace; color: var(--text); font-weight: 600; }
+
+/* Findings (severity-graded red team) */
+.findings { display: grid; gap: 10px; }
+.finding { border-left: 4px solid; border-radius: 8px; padding: 12px 14px; }
+.finding-head { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; align-items: center; margin-bottom: 6px; }
+.finding-sev { font-weight: 700; letter-spacing: 0.04em; }
+.finding-cat { color: var(--text-dim); font-family: ui-monospace, "SF Mono", monospace; }
+.finding-tickers { color: var(--text-dim); font-family: ui-monospace, "SF Mono", monospace; }
+.data-lim-tag { background: var(--card); color: var(--text-dim); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); font-weight: 600; }
+.finding-title { font-size: 14px; margin-bottom: 4px; }
+.finding-detail { font-size: 13px; color: var(--text); line-height: 1.55; margin-bottom: 6px; }
+.finding-action { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
 footer.app-foot { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; text-align: center; }
 footer.app-foot a { color: var(--text-dim); }
 """
@@ -460,9 +625,12 @@ footer.app-foot a { color: var(--text-dim); }
 def render(picks: list[dict], report_text: str, date_str: str) -> str:
     """Render the dashboard HTML. Refetches data from yfinance."""
     rows = enrich.fetch_rows(picks, report_text)
-    banner = _verdict_banner(rows)
+    findings = enrich.get_all_findings(report_text)
+    blocker_count = sum(1 for r in rows if r.get("blocker_title"))
+    banner = _verdict_banner(rows, blocker_count=blocker_count)
     cards = "".join(_pick_card(r) for r in rows) or '<p class="text-dim">无候选标的</p>'
     news = _news_section(rows)
+    findings_html = _findings_section(findings)
     critic = _critic_section(report_text)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -489,6 +657,7 @@ def render(picks: list[dict], report_text: str, date_str: str) -> str:
     <div class="picks-grid">{cards}</div>
   </section>
   {news}
+  {findings_html}
   {critic}
   <footer class="app-foot">
     生成时间 {now} · 数据来源 Yahoo Finance (~15分钟延迟) ·

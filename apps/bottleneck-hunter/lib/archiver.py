@@ -63,15 +63,35 @@ def append_rules(markdown_snippet: str) -> None:
 JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL)
 
 
+def _all_json_blocks(text: str) -> list:
+    out = []
+    for m in JSON_BLOCK_RE.finditer(text):
+        try:
+            out.append(json.loads(m.group(1)))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
 def extract_json(text: str) -> dict | list | None:
-    """Pull the first ```json ... ``` block out of an LLM response."""
-    m = JSON_BLOCK_RE.search(text)
-    if not m:
+    """Pull the first JSON block. For backward compat, picks-shaped blocks
+    are preferred even if a critic-findings block appears earlier."""
+    blocks = _all_json_blocks(text)
+    if not blocks:
         return None
-    try:
-        return json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return None
+    # Prefer picks block (has "picks" key) when multiple are present
+    for b in blocks:
+        if isinstance(b, dict) and "picks" in b:
+            return b
+    return blocks[0]
+
+
+def extract_critic_findings(text: str) -> dict | None:
+    """Find the critic findings JSON block (has 'findings' key)."""
+    for b in _all_json_blocks(text):
+        if isinstance(b, dict) and "findings" in b:
+            return b
+    return None
 
 
 def find_yesterday_report() -> tuple[Path, str] | None:
