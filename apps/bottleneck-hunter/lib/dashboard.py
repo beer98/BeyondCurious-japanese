@@ -256,6 +256,8 @@ def _findings_section(findings: list[dict]) -> str:
         non_blocking_note = ""
         if sev == "BLOCKER" and is_data_lim:
             non_blocking_note = ' <span class="data-lim-tag">系统问题·不阻止</span>'
+        src = f.get("source", "llm_critic")
+        src_label = "🔧 代码" if src == "hard_audit" else "🤖 LLM"
         items.append(
             f'<div class="finding finding-{sev.lower()}" '
             f'style="border-left-color:{meta["color"]};background:{meta["soft"]}">'
@@ -263,6 +265,7 @@ def _findings_section(findings: list[dict]) -> str:
             f'<span class="finding-sev">{meta["icon"]} {sev}</span>'
             f'<span class="finding-cat">{_esc(cat)}</span>'
             f'<span class="finding-tickers">{tickers}</span>'
+            f'<span class="finding-source">{src_label}</span>'
             f'{non_blocking_note}'
             f'</div>'
             f'<div class="finding-title"><strong>{title}</strong></div>'
@@ -395,7 +398,8 @@ def _critic_section(report_text: str) -> str:
 # ---- Top verdict banner ----
 
 
-def _verdict_banner(rows: list[dict], blocker_count: int = 0) -> str:
+def _verdict_banner(rows: list[dict], blocker_count: int = 0,
+                    audit_iterations: int = 1, final_blockers: int = 0) -> str:
     buy = sum(1 for r in rows if r["verdict"].startswith("🟢"))
     watch = sum(1 for r in rows if r["verdict"].startswith("🟡"))
     avoid = sum(1 for r in rows if r["verdict"].startswith("🔴"))
@@ -414,6 +418,17 @@ def _verdict_banner(rows: list[dict], blocker_count: int = 0) -> str:
     if blocker_count:
         warning = f'<div class="warning">🛑 红队 {blocker_count} 项 BLOCKER 触发，受影响标的已降级 AVOID（下方审计区有详情）</div>'
 
+    # Self-evolution stat: how many audit rounds it took
+    audit_stat = ""
+    if audit_iterations > 1:
+        audit_stat = (
+            f'<div class="audit-stat">🔁 系统自审 {audit_iterations} 轮（修复 BLOCKER 后重写）'
+            + (f' · 仍有 {final_blockers} 项遗留' if final_blockers else ' · 全部通过')
+            + "</div>"
+        )
+    elif audit_iterations == 1 and final_blockers == 0:
+        audit_stat = '<div class="audit-stat">✓ 单轮审计通过，无 BLOCKER</div>'
+
     return f"""
     <section class="banner banner-{mood}">
       <div class="banner-head">今日核心判断</div>
@@ -423,6 +438,7 @@ def _verdict_banner(rows: list[dict], blocker_count: int = 0) -> str:
         <span class="count-watch">🟡 WATCH <strong>{watch}</strong></span>
         <span class="count-avoid">🔴 AVOID <strong>{avoid}</strong></span>
       </div>
+      {audit_stat}
       {warning}
     </section>
     """
@@ -613,6 +629,10 @@ header.app-head .subtitle { color: var(--text-dim); font-size: 13px; margin-top:
 .finding-title { font-size: 14px; margin-bottom: 4px; }
 .finding-detail { font-size: 13px; color: var(--text); line-height: 1.55; margin-bottom: 6px; }
 .finding-action { font-size: 12px; color: var(--text-dim); font-style: italic; }
+.finding-source { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--card); border: 1px solid var(--border); color: var(--text-dim); font-family: ui-monospace, "SF Mono", monospace; }
+
+/* Audit stat (self-evolution counter) */
+.audit-stat { margin-top: 10px; padding: 8px 12px; background: #F1F0EB; color: var(--text-dim); border-radius: 6px; font-size: 12px; font-weight: 500; }
 
 footer.app-foot { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; text-align: center; }
 footer.app-foot a { color: var(--text-dim); }
@@ -622,12 +642,15 @@ footer.app-foot a { color: var(--text-dim); }
 # ---- Main render ----
 
 
-def render(picks: list[dict], report_text: str, date_str: str) -> str:
+def render(picks: list[dict], report_text: str, date_str: str,
+           audit_iterations: int = 1, final_blockers: int = 0) -> str:
     """Render the dashboard HTML. Refetches data from yfinance."""
     rows = enrich.fetch_rows(picks, report_text)
     findings = enrich.get_all_findings(report_text)
     blocker_count = sum(1 for r in rows if r.get("blocker_title"))
-    banner = _verdict_banner(rows, blocker_count=blocker_count)
+    banner = _verdict_banner(rows, blocker_count=blocker_count,
+                             audit_iterations=audit_iterations,
+                             final_blockers=final_blockers)
     cards = "".join(_pick_card(r) for r in rows) or '<p class="text-dim">无候选标的</p>'
     news = _news_section(rows)
     findings_html = _findings_section(findings)
@@ -670,10 +693,13 @@ def render(picks: list[dict], report_text: str, date_str: str) -> str:
 
 
 def write_dashboard(picks: list[dict], report_text: str, date_str: str,
-                    docs_dir: Path) -> Path:
+                    docs_dir: Path, audit_iterations: int = 1,
+                    final_blockers: int = 0) -> Path:
     """Write to docs/YYYY-MM-DD.html and also update docs/index.html."""
     docs_dir.mkdir(parents=True, exist_ok=True)
-    html_str = render(picks, report_text, date_str)
+    html_str = render(picks, report_text, date_str,
+                      audit_iterations=audit_iterations,
+                      final_blockers=final_blockers)
     dated = docs_dir / f"{date_str}.html"
     index = docs_dir / "index.html"
     dated.write_text(html_str, encoding="utf-8")

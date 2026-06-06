@@ -116,6 +116,8 @@ def build_daily_user(today: str, portfolio: str, macro: str) -> str:
       "stop": "X.XX",
       "target": "X.XX",
       "structure": "正股 / SellPut30Δ / ...",
+      "position_pct": 8,
+      "sector": "AI/CPO" | "AI/HBM" | "Power Grid" | "Critical Minerals" | "Nuclear" | "GLP-1" | "Other",
       "primary_layer": "Layer 1 catalysts | Layer 2 supply chain | Layer 3 scorecard | Layer 4 social | Layer 5 options",
       "reasoning": {{
         "catalyst": "Layer 1 - 这只票是从今天哪条催化剂引出来的（≤40字）",
@@ -138,8 +140,40 @@ def build_daily_user(today: str, portfolio: str, macro: str) -> str:
 }}
 ```
 
-**重要**：`scorecard` 里的 7 个分数是 7 维度漏斗打分（详见方法论 Layer 3），必须填实数。
+**硬性约束（hard audit 会用代码检查，违反必须重写）**：
+- `position_pct` 是单标的占总仓位的百分比，**必须 ≤ 15**
+- `sector` 必须从枚举列表里选一个
+- 同一 `sector` 下所有标的的 `position_pct` 累加 **必须 ≤ 35**
+- 每只 pick 的 `reasoning` 五个文本字段 + `scorecard` 七个数字字段**全部不能为空**
+- 入场区间、止损、目标价之间的 R:R 比应该 ≥ 1.5（建议而非硬要求）
+
+**重要**：`scorecard` 里的 7 个分数是 7 维度漏斗打分（详见方法论 Layer 3），必须填整数。
 注释 `"//"` 是给你看的，输出时**只输出数字**，不要注释行。
+"""
+
+
+def build_regen_user(feedback: str, prev_picks_json: dict | None = None) -> str:
+    """User message asking the model to regenerate after BLOCKER findings."""
+    prev_block = ""
+    if prev_picks_json:
+        import json as _j
+        prev_block = (
+            "\n上一版 picks JSON（仅供参考，必须修复 BLOCKER 后重新输出）：\n"
+            "```json\n" + _j.dumps(prev_picks_json, ensure_ascii=False, indent=2) +
+            "\n```\n"
+        )
+    return f"""你的上一版报告**未通过审计**。
+
+{feedback}
+{prev_block}
+请**重新生成完整今日报告**。要求：
+1. 修复上面列出的每一条 BLOCKER（特别是仓位 / 板块集中度 / 必填字段）
+2. 保留有效的部分（论点、催化剂分析、社交信号判断不需要重写）
+3. 输出格式同先前要求（Markdown 报告 + 末尾 picks JSON）
+4. 在报告开头加一行：「> 第 N 轮修订（修复 X 项 BLOCKER）」让用户看到迭代
+
+如果某条 BLOCKER 你认为是误判，**在报告里明确写出反驳理由 + 引用具体规则原文**，
+不要默默忽略——审计器会再次检查。
 """
 
 
@@ -209,8 +243,32 @@ def build_distill_user(patterns: list[dict], current_rules: str) -> str:
 """
 
 
-def build_critic_user(today_report: str) -> str:
-    return f"""任务：审计今日扫描报告。你是「红队」，目标是找它的漏洞——但**有底线**。
+def build_critic_user(today_report: str, hard_findings: list[dict] | None = None) -> str:
+    hard_block = ""
+    if hard_findings:
+        import json as _j
+        hard_block = (
+            "\n# 硬代码审计已发现以下问题（不要重复）\n"
+            "```json\n" + _j.dumps(hard_findings, ensure_ascii=False, indent=2) +
+            "\n```\n"
+            "你的任务是发现这些**之外**的软性问题。重复硬检查覆盖的事项 = 失败。\n"
+        )
+    return f"""任务：审计今日扫描报告的**软性问题**（硬规则已由代码检查覆盖）。
+{hard_block}
+# 你只能审计这些（其他事项已有代码兜底）
+
+- 论点深度：核心数据是否能被现有信息证伪？
+- 反方完整性：反方论点是否稻草人？是否覆盖最可能的失败路径？
+- 失败信号可观测性：是否可量化、用户能日常监控？
+- 盲点：哪些催化剂 / 板块 / 风险被忽略？
+- 数据来源真实性：引用的 URL 是否实际存在（如能判断）？
+
+# 禁止重复以下事项（已由 hard audit 检查）
+
+- 仓位百分比是否超 15% / 35%
+- R:R 比是否 ≥ 1.5
+- reasoning / scorecard 字段是否完整
+- 入场区是否偏离当前价过远
 
 # 严重级别（不要乱用 BLOCKER）
 
@@ -264,6 +322,12 @@ def build_critic_user(today_report: str) -> str:
 - `overall_verdict`：有任何 BLOCKER(非 DATA_LIMITATION) → AVOID_ALL；只有 WARNING → PROCEED_WITH_CAUTION；只有 INFO 或啥都没 → PROCEED
 
 JSON 之后再追加一段 markdown 评论，以 `## 自审批注（红队复核）` 为标题，给人类阅读。
+
+# 引用纪律（重要）
+
+每条 finding 的 `detail` 必须**引用报告中具体段落或具体数字**。例如：
+- ❌ 不接受："论点不严谨"
+- ✅ 接受："Layer 3 给 AXTI 财务质量 5/10，但报告里没有 Q3 数据支撑此分数"
 
 待审报告：
 ---
